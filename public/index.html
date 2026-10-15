@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ari RTMP — Self-hosted live streaming</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="h-full bg-slate-950 text-slate-100 antialiased">
+  <div class="min-h-full flex flex-col">
+    <header class="border-b border-slate-800">
+      <div class="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="h-9 w-9 rounded-lg bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center font-bold">A</div>
+          <span class="font-semibold tracking-tight text-lg">Ari RTMP</span>
+        </div>
+        <a id="ctaTop" href="/login.html" class="text-sm px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition">Sign in</a>
+      </div>
+    </header>
+
+    <main class="flex-1">
+      <section class="max-w-5xl mx-auto px-6 py-20">
+        <p class="text-indigo-400 font-medium mb-3">Low-latency HLS • ABR • Self-hosted</p>
+        <h1 class="text-4xl md:text-6xl font-bold tracking-tight leading-tight">
+          Stream on your own terms.
+        </h1>
+        <p class="mt-6 text-slate-400 text-lg max-w-2xl">
+          Ari RTMP ingests OBS over RTMP/RTMPS, transcodes an adaptive bitrate
+          ladder, and delivers token-gated low-latency HLS with dynamic
+          watermarks and strict domain whitelisting.
+        </p>
+        <div class="mt-10 flex flex-wrap gap-4">
+          <a id="ctaMain" href="/login.html" class="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-medium transition">Open dashboard</a>
+          <a href="/player.html" class="px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 font-medium transition">View player</a>
+        </div>
+
+        <div id="statusNote" class="mt-8 text-sm text-amber-400 hidden">
+          No administrator account exists yet. <a href="/setup.html" class="underline">Run the setup wizard →</a>
+        </div>
+
+        <div class="mt-20 grid md:grid-cols-3 gap-6">
+          <div class="p-6 rounded-2xl bg-slate-900 border border-slate-800">
+            <h3 class="font-semibold mb-2">Strict stream keys</h3>
+            <p class="text-sm text-slate-400">Every RTMP publish is validated against the database; unknown or disabled keys are rejected instantly.</p>
+          </div>
+          <div class="p-6 rounded-2xl bg-slate-900 border border-slate-800">
+            <h3 class="font-semibold mb-2">Short-lived tokens</h3>
+            <p class="text-sm text-slate-400">Playback tokens auto-refresh mid-stream, so long sessions never drop while segments stay gated.</p>
+          </div>
+          <div class="p-6 rounded-2xl bg-slate-900 border border-slate-800">
+            <h3 class="font-semibold mb-2">Dynamic watermarks</h3>
+            <p class="text-sm text-slate-400">Each viewer gets a unique watermark string tied server-side to their IP — the IP never reaches the player.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="border-t border-slate-800">
+      <div class="max-w-5xl mx-auto px-6 py-6 text-sm text-slate-500">
+        Ari RTMP — MIT licensed.
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    (async () => {
+      try {
+        const res = await fetch('/api/setup/status');
+        const { configured } = await res.json();
+        if (!configured) {
+          document.getElementById('statusNote').classList.remove('hidden');
+          document.getElementById('ctaMain').href = '/setup.html';
+          document.getElementById('ctaMain').textContent = 'Run setup wizard';
+          document.getElementById('ctaTop').href = '/setup.html';
+          document.getElementById('ctaTop').textContent = 'Get started';
+        }
+      } catch { /* ignore */ }
+    })();
+  </script>
+</body>
+</html>

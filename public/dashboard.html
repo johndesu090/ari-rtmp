@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard — Ari RTMP</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-full bg-slate-950 text-slate-100">
+  <header class="border-b border-slate-800 sticky top-0 bg-slate-950/90 backdrop-blur z-10">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="h-9 w-9 rounded-lg bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center font-bold">A</div>
+        <span class="font-semibold tracking-tight">Ari RTMP</span>
+      </div>
+      <div class="flex items-center gap-4 text-sm">
+        <span class="text-slate-400" id="whoami">…</span>
+        <button id="logoutBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 transition">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="max-w-6xl mx-auto px-6 py-6">
+    <nav class="flex gap-2 border-b border-slate-800 mb-6">
+      <button data-tab="streams"   class="tab-btn px-4 py-2 -mb-px border-b-2 border-indigo-500 font-medium">Streams</button>
+      <button data-tab="whitelist" class="tab-btn px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400">Whitelist</button>
+      <button data-tab="viewers"   class="tab-btn px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400">Viewer Log</button>
+      <button data-tab="p2p"       class="tab-btn px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400">P2P Tracker</button>
+    </nav>
+
+    <!-- ── Streams ── -->
+    <section id="tab-streams" class="tab-panel">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Streams</h2>
+        <div class="flex gap-2">
+          <input id="newStreamTitle" placeholder="New stream title"
+                 class="rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+          <button id="createStream" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition">Create stream</button>
+        </div>
+      </div>
+      <div id="streamsList" class="space-y-4"></div>
+    </section>
+
+    <!-- ── Whitelist ── -->
+    <section id="tab-whitelist" class="tab-panel hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Embed domain whitelist</h2>
+        <div class="flex gap-2">
+          <input id="newDomain" placeholder="example.com"
+                 class="rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+          <button id="addDomain" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition">Add domain</button>
+        </div>
+      </div>
+      <p class="text-sm text-slate-400 mb-4">If the list is empty, embedding is unrestricted. Otherwise, only listed domains (and their subdomains) may embed the player.</p>
+      <div id="whitelistList" class="space-y-2"></div>
+    </section>
+
+    <!-- ── Viewer Log ── -->
+    <section id="tab-viewers" class="tab-panel hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Viewer activity (watermark ↔ IP)</h2>
+        <button id="refreshViewers" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm transition">Refresh</button>
+      </div>
+      <div class="overflow-x-auto rounded-xl border border-slate-800">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-900 text-slate-400">
+            <tr>
+              <th class="text-left px-4 py-3 font-medium">Watermark</th>
+              <th class="text-left px-4 py-3 font-medium">IP address</th>
+              <th class="text-left px-4 py-3 font-medium">Stream</th>
+              <th class="text-left px-4 py-3 font-medium">First seen</th>
+              <th class="text-left px-4 py-3 font-medium">Last seen</th>
+            </tr>
+          </thead>
+          <tbody id="viewersBody" class="divide-y divide-slate-800"></tbody>
+        </table>
+      </div>
+    </section>
+    <!-- ── P2P Tracker ── -->
+    <section id="tab-p2p" class="tab-panel hidden">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <h2 class="text-lg font-semibold">P2P Tracker</h2>
+          <span id="p2pStatus" class="px-2 py-0.5 rounded-full bg-slate-700 text-xs">…</span>
+        </div>
+        <button id="refreshP2P" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm transition">Refresh</button>
+      </div>
+      <p class="text-sm text-slate-400 mb-5">
+        Viewers share HLS segments with each other over WebRTC. A higher P2P ratio means less
+        origin-server bandwidth. Playlists always come from the server.
+      </p>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+          <div class="text-xs text-slate-500 mb-1">Peers online</div>
+          <div id="p2pPeers" class="text-2xl font-semibold">0</div>
+        </div>
+        <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+          <div class="text-xs text-slate-500 mb-1">Active swarms</div>
+          <div id="p2pSwarms" class="text-2xl font-semibold">0</div>
+        </div>
+        <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+          <div class="text-xs text-slate-500 mb-1">P2P offload</div>
+          <div id="p2pRatio" class="text-2xl font-semibold">0%</div>
+        </div>
+        <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+          <div class="text-xs text-slate-500 mb-1">P2P traffic</div>
+          <div id="p2pTraffic" class="text-2xl font-semibold">0 B</div>
+        </div>
+      </div>
+
+      <h3 class="text-sm font-semibold text-slate-300 mb-2">Live swarms</h3>
+      <div class="overflow-x-auto rounded-xl border border-slate-800 mb-8">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-900 text-slate-400">
+            <tr>
+              <th class="text-left px-4 py-3 font-medium">Stream key</th>
+              <th class="text-left px-4 py-3 font-medium">Peers</th>
+              <th class="text-left px-4 py-3 font-medium">From peers</th>
+              <th class="text-left px-4 py-3 font-medium">From server</th>
+              <th class="text-left px-4 py-3 font-medium">P2P ratio</th>
+            </tr>
+          </thead>
+          <tbody id="p2pBody" class="divide-y divide-slate-800"></tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-sm font-semibold text-slate-300">Recent windows (30s snapshots)</h3>
+        <span class="text-xs text-slate-500" id="p2pSummary"></span>
+      </div>
+      <div class="overflow-x-auto rounded-xl border border-slate-800">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-900 text-slate-400">
+            <tr>
+              <th class="text-left px-4 py-3 font-medium">Time</th>
+              <th class="text-left px-4 py-3 font-medium">Stream key</th>
+              <th class="text-left px-4 py-3 font-medium">Peers</th>
+              <th class="text-left px-4 py-3 font-medium">From peers</th>
+              <th class="text-left px-4 py-3 font-medium">From server</th>
+            </tr>
+          </thead>
+          <tbody id="p2pHistory" class="divide-y divide-slate-800"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="fixed bottom-6 right-6 hidden px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-sm shadow-lg"></div>
+    const $ = (sel, root = document) => root.querySelector(sel);
+
+    let toastTimer;
+    function toast(msg, ok = true) {
+      const el = $('#toast');
+      el.textContent = msg;
+      el.className = `fixed bottom-6 right-6 px-4 py-3 rounded-xl text-sm shadow-lg border ${ok ? 'bg-emerald-950 border-emerald-800 text-emerald-200' : 'bg-red-950 border-red-800 text-red-200'}`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.add('hidden'), 2600);
+    }
+
+    async function api(path, opts = {}) {
+      const res = await fetch(path, {
+        headers: { 'Content-Type': 'application/json' },
+        ...opts,
+      });
+      if (res.status === 401) { window.location.replace('/login.html'); throw new Error('unauth'); }
+      const body = res.status === 204 ? {} : await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || 'request_failed');
+      return body;
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    // ── Tabs ──
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => {
+          b.classList.toggle('border-indigo-500', b === btn);
+          b.classList.toggle('border-transparent', b !== btn);
+          b.classList.toggle('text-slate-400', b !== btn);
+        });
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+        $('#tab-' + btn.dataset.tab).classList.remove('hidden');
+        if (btn.dataset.tab === 'viewers') loadViewers();
+        if (btn.dataset.tab === 'whitelist') loadWhitelist();
+        if (btn.dataset.tab === 'p2p') loadP2P();
+      });
+    });
+
+    // ── Auth ──
+    async function loadMe() {
+      try {
+        const { admin } = await api('/api/auth/me');
+        $('#whoami').textContent = admin.username;
+      } catch { /* redirected */ }
+    }
+    $('#logoutBtn').addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.replace('/login.html');
+    });
+
+    // ── Streams ──
+    function streamCard(s) {
+      const liveBadge = s.live
+        ? '<span class="px-2 py-0.5 rounded-full bg-red-600 text-xs font-medium">LIVE</span>'
+        : '<span class="px-2 py-0.5 rounded-full bg-slate-700 text-xs font-medium">OFFLINE</span>';
+      const activeBadge = s.isActive
+        ? '<span class="text-emerald-400 text-xs">enabled</span>'
+        : '<span class="text-amber-400 text-xs">disabled</span>';
+
+      return `
+      <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-3 mb-1">
+              <h3 class="font-semibold">${escapeHtml(s.title)}</h3>
+              ${liveBadge} ${activeBadge}
+            </div>
+            <div class="text-xs text-slate-500">created ${new Date(s.createdAt).toLocaleString()} · ${s._count?.viewers ?? 0} sessions</div>
+          </div>
+          <div class="flex flex-wrap gap-2 justify-end">
+            <button data-act="toggle" data-id="${s.id}" data-active="${s.isActive}" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">${s.isActive ? 'Disable' : 'Enable'}</button>
+            <button data-act="rotate" data-id="${s.id}" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Rotate key</button>
+            <button data-act="delete" data-id="${s.id}" class="px-3 py-1.5 rounded-lg bg-red-950 hover:bg-red-900 border border-red-900 text-xs transition">Delete</button>
+          </div>
+        </div>
+
+        <dl class="mt-4 grid md:grid-cols-2 gap-3 text-sm">
+          <div class="md:col-span-2">
+            <dt class="text-slate-500 text-xs mb-1">Stream key</dt>
+            <dd class="flex items-center gap-2">
+              <code class="flex-1 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">${escapeHtml(s.streamKey)}</code>
+              <button data-copy="${escapeHtml(s.streamKey)}" class="copy px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button>
+            </dd>
+          </div>
+          <div>
+            <dt class="text-slate-500 text-xs mb-1">RTMP ingest</dt>
+            <dd class="flex items-center gap-2"><code class="flex-1 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">${escapeHtml(s.rtmpUrl)}</code><button data-copy="${escapeHtml(s.rtmpUrl)}" class="copy px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button></dd>
+          </div>
+          <div>
+            <dt class="text-slate-500 text-xs mb-1">HLS URL</dt>
+            <dd class="flex items-center gap-2"><code class="flex-1 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">${escapeHtml(s.hlsUrl)}</code><button data-copy="${escapeHtml(s.hlsUrl)}" class="copy px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button></dd>
+          </div>
+          <div class="md:col-span-2">
+            <dt class="text-slate-500 text-xs mb-1">Embed iframe</dt>
+            <dd class="flex items-center gap-2"><code class="flex-1 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">&lt;iframe src="${escapeHtml(s.embedUrl)}" allow="autoplay"&gt;&lt;/iframe&gt;</code><button data-copy='<iframe src="${escapeHtml(s.embedUrl)}" allow="autoplay"></iframe>' class="copy px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button></dd>
+          </div>
+        </dl>
+      </div>`;
+    }
+
+    async function loadStreams() {
+      const { streams } = await api('/api/streams');
+      const list = $('#streamsList');
+      if (!streams.length) {
+        list.innerHTML = '<div class="text-slate-500 text-sm p-8 text-center border border-dashed border-slate-800 rounded-2xl">No streams yet. Create one above.</div>';
+        return;
+      }
+      list.innerHTML = streams.map(streamCard).join('');
+    }
+
+    $('#createStream').addEventListener('click', async () => {
+      const title = $('#newStreamTitle').value.trim() || 'Untitled stream';
+      try {
+        await api('/api/streams', { method: 'POST', body: JSON.stringify({ title }) });
+        $('#newStreamTitle').value = '';
+        toast('Stream created');
+        loadStreams();
+      } catch (e) { toast(e.message, false); }
+    });
+
+    $('#streamsList').addEventListener('click', async (e) => {
+      const copyBtn = e.target.closest('.copy');
+      if (copyBtn) {
+        await navigator.clipboard.writeText(copyBtn.dataset.copy);
+        toast('Copied to clipboard');
+        return;
+      }
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const { act, id } = btn.dataset;
+      try {
+        if (act === 'toggle') {
+          await api(`/api/streams/${id}`, { method: 'PATCH', body: JSON.stringify({ isActive: btn.dataset.active !== 'true' }) });
+        } else if (act === 'rotate') {
+          if (!confirm('Rotate the stream key? The current key stops working immediately.')) return;
+          await api(`/api/streams/${id}`, { method: 'PATCH', body: JSON.stringify({ rotateKey: true }) });
+        } else if (act === 'delete') {
+          if (!confirm('Delete this stream and all its viewer sessions?')) return;
+          await api(`/api/streams/${id}`, { method: 'DELETE' });
+        }
+        toast('Updated');
+        loadStreams();
+      } catch (err) { toast(err.message, false); }
+    });
+
+    // ── Whitelist ──
+    async function loadWhitelist() {
+      const { domains } = await api('/api/whitelist');
+      const list = $('#whitelistList');
+      if (!domains.length) {
+        list.innerHTML = '<div class="text-slate-500 text-sm p-6 text-center border border-dashed border-slate-800 rounded-2xl">No domains whitelisted — embedding is currently unrestricted.</div>';
+        return;
+      }
+      list.innerHTML = domains.map(d => `
+        <div class="flex items-center justify-between px-4 py-3 rounded-xl bg-slate-900 border border-slate-800">
+          <span class="text-sm">${escapeHtml(d.domain)}</span>
+          <button data-del-domain="${d.id}" class="px-3 py-1.5 rounded-lg bg-red-950 hover:bg-red-900 border border-red-900 text-xs transition">Remove</button>
+        </div>`).join('');
+    }
+
+    $('#addDomain').addEventListener('click', async () => {
+      const domain = $('#newDomain').value.trim();
+      if (!domain) return;
+      try {
+        await api('/api/whitelist', { method: 'POST', body: JSON.stringify({ domain }) });
+        $('#newDomain').value = '';
+        toast('Domain added');
+        loadWhitelist();
+      } catch (e) { toast(e.message === 'already_whitelisted' ? 'Already whitelisted' : e.message, false); }
+    });
+
+    $('#whitelistList').addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-del-domain]');
+      if (!btn) return;
+      try {
+        await api(`/api/whitelist/${btn.dataset.delDomain}`, { method: 'DELETE' });
+        toast('Removed');
+        loadWhitelist();
+      } catch (err) { toast(err.message, false); }
+    });
+
+    // ── Viewers ──
+    async function loadViewers() {
+      const { viewers } = await api('/api/viewers');
+      const body = $('#viewersBody');
+      if (!viewers.length) {
+        body.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No viewer sessions recorded yet.</td></tr>';
+        return;
+      }
+      body.innerHTML = viewers.map(v => `
+        <tr class="hover:bg-slate-900/50">
+          <td class="px-4 py-3"><code class="px-2 py-0.5 rounded bg-slate-800 text-xs tracking-widest">${escapeHtml(v.watermark)}</code></td>
+          <td class="px-4 py-3 font-mono text-xs">${escapeHtml(v.ipAddress)}</td>
+          <td class="px-4 py-3 text-slate-300">${escapeHtml(v.stream?.title ?? '—')}</td>
+          <td class="px-4 py-3 text-slate-400 text-xs">${new Date(v.createdAt).toLocaleString()}</td>
+          <td class="px-4 py-3 text-slate-400 text-xs">${new Date(v.lastSeen).toLocaleString()}</td>
+        </tr>`).join('');
+    }
+    $('#refreshViewers').addEventListener('click', loadViewers);
+
+    // ── P2P Tracker ──
+    function formatBytes(n) {
+      n = Number(n) || 0;
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let i = 0;
+      while (n >= 1024 && i < units.length - 1) { n /= 1024; i += 1; }
+      return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+    }
+
+    function shortKey(k) {
+      if (!k) return '—';
+      return k.length > 14 ? k.slice(0, 8) + '…' + k.slice(-4) : k;
+    }
+
+    async function loadP2P() {
+      let stats = null;
+      try { stats = await api('/api/p2p/stats'); } catch { /* ignore */ }
+
+      if (stats) {
+        const statusEl = $('#p2pStatus');
+        if (stats.enabled) {
+          statusEl.textContent = 'enabled';
+          statusEl.className = 'px-2 py-0.5 rounded-full bg-emerald-900 text-emerald-300 text-xs';
+        } else {
+          statusEl.textContent = 'disabled';
+          statusEl.className = 'px-2 py-0.5 rounded-full bg-amber-900 text-amber-300 text-xs';
+        }
+
+        $('#p2pPeers').textContent = stats.totals.peers;
+        $('#p2pSwarms').textContent = stats.totals.activeSwarms;
+        $('#p2pRatio').textContent = Math.round((stats.totals.ratio || 0) * 100) + '%';
+        $('#p2pTraffic').textContent = formatBytes(stats.totals.p2pBytes);
+
+        const body = $('#p2pBody');
+        if (!stats.swarms.length) {
+          body.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No active swarms right now.</td></tr>';
+        } else {
+          body.innerHTML = stats.swarms.map(s => `
+            <tr class="hover:bg-slate-900/50">
+              <td class="px-4 py-3"><code class="text-xs">${escapeHtml(shortKey(s.streamKey))}</code></td>
+              <td class="px-4 py-3">${s.peers}</td>
+              <td class="px-4 py-3 text-emerald-400">${formatBytes(s.p2pBytes)}</td>
+              <td class="px-4 py-3 text-slate-400">${formatBytes(s.serverBytes)}</td>
+              <td class="px-4 py-3">${Math.round((s.ratio || 0) * 100)}%</td>
+            </tr>`).join('');
+        }
+      }
+
+      try {
+        const [{ snapshots }, summary] = await Promise.all([
+          api('/api/p2p/history?limit=50'),
+          api('/api/p2p/summary'),
+        ]);
+        $('#p2pSummary').textContent =
+          `all-time offload ${Math.round((summary.ratio || 0) * 100)}% · ` +
+          `${formatBytes(summary.p2pBytes)} shared · peak ${summary.peakPeers} peers`;
+
+        const hist = $('#p2pHistory');
+        if (!snapshots.length) {
+          hist.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No snapshots yet.</td></tr>';
+        } else {
+          hist.innerHTML = snapshots.map(s => `
+            <tr class="hover:bg-slate-900/50">
+              <td class="px-4 py-3 text-slate-400 text-xs">${new Date(s.createdAt).toLocaleString()}</td>
+              <td class="px-4 py-3"><code class="text-xs">${escapeHtml(shortKey(s.streamKey))}</code></td>
+              <td class="px-4 py-3">${s.peers}</td>
+              <td class="px-4 py-3 text-emerald-400">${formatBytes(s.p2pBytes)}</td>
+              <td class="px-4 py-3 text-slate-400">${formatBytes(s.serverBytes)}</td>
+            </tr>`).join('');
+        }
+      } catch { /* ignore */ }
+    }
+
+    $('#refreshP2P').addEventListener('click', loadP2P);
+
+    // ── Boot ──
+    loadMe();
+    loadStreams();
+    // Live badge refresh
+    setInterval(() => {
+      if (!$('#tab-streams').classList.contains('hidden')) loadStreams().catch(() => {});
+    }, 15000);
+    // P2P tracker refresh
+    setInterval(() => {
+      if (!$('#tab-p2p').classList.contains('hidden')) loadP2P().catch(() => {});
+    }, 8000);
+  </script>
+</body>
+</html>

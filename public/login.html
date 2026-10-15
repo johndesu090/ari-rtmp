@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in — Ari RTMP</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="h-full bg-slate-950 text-slate-100 grid place-items-center p-6">
+  <div class="w-full max-w-md">
+    <div class="flex items-center gap-3 mb-8 justify-center">
+      <div class="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center font-bold">A</div>
+      <span class="font-semibold text-xl">Ari RTMP</span>
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-8">
+      <h1 class="text-2xl font-semibold mb-6">Sign in</h1>
+      <form id="loginForm" class="space-y-4">
+        <div>
+          <label class="block text-sm text-slate-300 mb-1">Username</label>
+          <input name="username" required autocomplete="username"
+                 class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 outline-none focus:border-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-slate-300 mb-1">Password</label>
+          <input name="password" type="password" required autocomplete="current-password"
+                 class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 outline-none focus:border-indigo-500" />
+        </div>
+
+        <div id="error" class="hidden text-sm text-red-400 bg-red-950/40 border border-red-900 rounded-lg px-3 py-2"></div>
+
+        <button type="submit" id="submitBtn"
+                class="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 font-medium py-2.5 transition disabled:opacity-50">
+          Sign in
+        </button>
+      </form>
+    </div>
+
+    <p class="text-center text-sm text-slate-500 mt-6">
+      Need to set up? <a href="/setup.html" class="text-indigo-400 hover:underline">Run the wizard</a>
+    </p>
+  </div>
+
+  <script>
+    const form = document.getElementById('loginForm');
+    const errorEl = document.getElementById('error');
+    const btn = document.getElementById('submitBtn');
+
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) window.location.replace('/dashboard.html');
+        else {
+          const s = await fetch('/api/setup/status').then(r => r.json());
+          if (!s.configured) window.location.replace('/setup.html');
+        }
+      } catch { /* ignore */ }
+    })();
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorEl.classList.add('hidden');
+      const data = new FormData(form);
+      btn.disabled = true;
+      btn.textContent = 'Signing in…';
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: data.get('username'), password: data.get('password') }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || 'login_failed');
+        window.location.replace('/dashboard.html');
+      } catch (err) {
+        errorEl.textContent = err.message === 'invalid_credentials' ? 'Invalid username or password.' : 'Sign in failed.';
+        errorEl.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = 'Sign in';
+      }
+    });
+  </script>
+</body>
+</html>

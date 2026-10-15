@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <title>Ari RTMP Player</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+  <script src="/p2p-engine.js"></script>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    #stage { position: relative; width: 100%; height: 100%; background: #000; }
+    video {
+      width: 100%; height: 100%; object-fit: contain; background: #000; display: block;
+    }
+    /* Hide the native fullscreen control across engines. */
+    video::-webkit-media-controls-fullscreen-button { display: none !important; }
+    video::-webkit-media-controls-picture-in-picture-button { display: none !important; }
+
+    /* ── Floating watermark ── */
+    #watermark {
+      position: absolute;
+      top: 8%;
+      left: 6%;
+      pointer-events: none;
+      user-select: none;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 700;
+      font-size: clamp(14px, 3.2vw, 30px);
+      letter-spacing: 0.18em;
+      color: rgba(255, 255, 255, 0.30);
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+      mix-blend-mode: screen;
+      will-change: transform;
+      animation: drift 26s ease-in-out infinite alternate;
+      z-index: 5;
+    }
+    @keyframes drift {
+      0%   { transform: translate(0, 0); }
+      20%  { transform: translate(52vw, 6vh); }
+      40%  { transform: translate(30vw, 62vh); }
+      60%  { transform: translate(4vw, 44vh); }
+      80%  { transform: translate(58vw, 30vh); }
+      100% { transform: translate(12vw, 8vh); }
+    }
+    /* A second, slower ghost mark for redundancy. */
+    #watermark2 {
+      position: absolute; bottom: 10%; right: 8%;
+      pointer-events: none; user-select: none;
+      font-family: ui-monospace, monospace; font-weight: 700;
+      font-size: clamp(11px, 2.2vw, 20px); letter-spacing: 0.14em;
+      color: rgba(255, 255, 255, 0.16);
+      text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+      animation: drift2 37s linear infinite alternate;
+      z-index: 5;
+    }
+    @keyframes drift2 {
+      0% { transform: translate(0,0); }
+      50% { transform: translate(-46vw, -34vh); }
+      100% { transform: translate(-6vw, -6vh); }
+    }
+
+    /* ── Overlay (loading / errors / domain block) ── */
+    #overlay {
+      position: absolute; inset: 0; z-index: 20;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(2, 6, 23, 0.92); color: #e2e8f0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      text-align: center; padding: 24px;
+    }
+    #overlay.hidden { display: none; }
+    #overlay .box { max-width: 460px; }
+    #overlay h1 { font-size: 1.05rem; font-weight: 600; margin: 0 0 8px; }
+    #overlay p { font-size: 0.85rem; color: #94a3b8; margin: 0; line-height: 1.5; }
+    .spinner {
+      width: 30px; height: 30px; margin: 0 auto 14px;
+      border: 3px solid rgba(148,163,184,0.3); border-top-color: #818cf8;
+      border-radius: 50%; animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <video
+      id="video"
+      playsinline
+      webkit-playsinline
+      x5-playsinline
+      x5-video-player-type="h5"
+      x5-video-player-fullscreen="false"
+      disablepictureinpicture
+      disableremoteplayback
+      controlslist="nodownload nofullscreen noremoteplayback"
+      controls
+      preload="auto"
+    ></video>
+
+    <div id="watermark"></div>
+    <div id="watermark2"></div>
+
+    <div id="overlay">
+      <div class="box">
+        <div class="spinner" id="spinner"></div>
+        <h1 id="overlayTitle">Connecting…</h1>
+        <p id="overlayText">Requesting a secure playback token.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    'use strict';
+
+    // ── Config ─────────────────────────────────────────────────────────
+    const params = new URLSearchParams(window.location.search);
+    const STREAM_KEY = params.get('key') || params.get('stream') || '';
+    const API_BASE = ''; // same origin
+
+    // ── State ──────────────────────────────────────────────────────────
+    let currentToken = null;
+    let refreshTimer = null;
+    let hls = null;
+    let watermarkText = '';
+    let destroyed = false;
+    let p2p = null;
+
+    const video = document.getElementById('video');
+    const overlay = document.getElementById('overlay');
+    const spinner = document.getElementById('spinner');
+    const overlayTitle = document.getElementById('overlayTitle');
+    const overlayText = document.getElementById('overlayText');
+    const wm1 = document.getElementById('watermark');
+    const wm2 = document.getElementById('watermark2');
+
+    function showOverlay(title, text, loading = false) {
+      overlayTitle.textContent = title;
+      overlayText.textContent = text || '';
+      spinner.style.display = loading ? 'block' : 'none';
+      overlay.classList.remove('hidden');
+    }
+    function hideOverlay() { overlay.classList.add('hidden'); }
+
+    // ── Determine the embedding host ───────────────────────────────────
+    // Sends the host we are embedded on so the backend can enforce the
+    // whitelist. Falls back to our own host for direct visits.
+    function detectEmbedHost() {
+      try {
+        if (document.referrer) return new URL(document.referrer).hostname;
+      } catch { /* ignore */ }
+      try {
+        const anc = window.location.ancestorOrigins;
+        if (anc && anc.length) return new URL(anc[0]).hostname;
+      } catch { /* ignore */ }
+      return window.location.hostname;
+    }
+
+    // ── Watermark rendering ────────────────────────────────────────────
+    function applyWatermark(text) {
+      watermarkText = text;
+      wm1.textContent = text;
+      wm2.textContent = text;
+      // Rotate positions a little so a screenshot always contains the mark.
+      const jitter = () => `${(Math.random() * 8 - 4).toFixed(1)}vw`;
+      setInterval(() => {
+        wm1.style.marginLeft = jitter();
+        wm1.style.marginTop = jitter();
+      }, 12000);
+    }
+
+    // ── No-fullscreen enforcement ──────────────────────────────────────
+    // Intercept every fullscreen entry point and immediately exit.
+    function killFullscreen(el) {
+      try {
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+          (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
+        }
+      } catch { /* ignore */ }
+      try { if (el?.webkitEnterFullscreen) el.webkitEnterFullscreen = () => {}; } catch { /* ignore */ }
+      try { if (video.webkitEnterFullscreen) video.webkitEnterFullscreen = () => {}; } catch { /* ignore */ }
+    }
+    for (const proto of [Element.prototype, HTMLElement.prototype]) {
+      for (const method of ['requestFullscreen', 'webkitRequestFullscreen', 'webkitRequestFullScreen', 'mozRequestFullScreen', 'msRequestFullscreen']) {
+        if (proto && proto[method]) {
+          proto[method] = function () { killFullscreen(this); return Promise.resolve(); };
+        }
+      }
+    }
+    ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange']
+      .forEach(evt => document.addEventListener(evt, () => killFullscreen(video)));
+    // Some iOS versions expose this directly on the video element.
+    try {
+      Object.defineProperty(video, 'webkitEnterFullscreen', { value: () => {}, writable: false });
+    } catch { /* ignore */ }
+
+    // ── API helpers ────────────────────────────────────────────────────
+    async function postJson(path, body) {
+      const res = await fetch(API_BASE + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body || {}),
+      });
+      let data = {};
+      try { data = await res.json(); } catch { /* ignore */ }
+      return { ok: res.ok, status: res.status, data };
+    }
+
+    // ── Token refresh loop ─────────────────────────────────────────────
+    async function refreshToken() {
+      if (destroyed || !currentToken) return;
+      const { ok, data } = await postJson('/api/playback/refresh', { token: currentToken });
+      if (!ok || !data.token) {
+        // Token could not be renewed — surface a soft error but keep the
+        // current playback alive until the next attempt.
+        console.warn('[player] token refresh failed', data);
+        scheduleRefresh(5);
+        return;
+      }
+      currentToken = data.token;
+      if (data.watermark && data.watermark !== watermarkText) applyWatermark(data.watermark);
+      if (p2p) p2p.updateToken(currentToken);
+      scheduleRefresh(data.refreshIn || 45);
+    }
+
+    function scheduleRefresh(seconds) {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(refreshToken, Math.max(5, seconds) * 1000);
+    }
+
+    // ── HLS playback ───────────────────────────────────────────────────
+    function tokenized(url) {
+      const u = new URL(url, window.location.href);
+      if (currentToken) u.searchParams.set('token', currentToken);
+      return u.toString();
+    }
+
+    // Minimal LoaderStats object for hls.js when we short-circuit the loader.
+    function buildStats(bytes) {
+      const now = (window.performance && performance.now()) || Date.now();
+      return {
+        aborted: false,
+        loaded: bytes,
+        retry: 0,
+        total: bytes,
+        chunkCount: 1,
+        bwEstimate: 0,
+        loading: { start: now, end: now, first: now, finish: now },
+        parsing: { start: now, end: now },
+        buffering: { start: 0, end: 0, endOffset: 0 },
+      };
+    }
+
+    function startPlayback(hlsUrl) {
+      const isNative = video.canPlayType('application/vnd.apple.mpegurl');
+
+      if (window.Hls && window.Hls.isSupported()) {
+        // Custom loader: rewrite every playlist + segment URL to carry the
+        // current token. Runs before the XHR is opened, so it is reliable
+        // across hls.js versions.
+        const BaseLoader = window.Hls.DefaultConfig.loader;
+        class TokenLoader extends BaseLoader {
+          load(context, config, callbacks) {
+            const urlWithToken = tokenized(context.url);
+
+            // Media segments: try the P2P swarm first, fall back to server.
+            if (p2p && context.type === 'fragment') {
+              let segKey = null;
+              try {
+                segKey = new URL(urlWithToken, window.location.href).pathname;
+              } catch { /* ignore */ }
+
+              if (segKey) {
+                p2p
+                  .fetchSegment(segKey, urlWithToken)
+                  .then((buf) => {
+                    callbacks.onSuccess(
+                      { url: urlWithToken, data: buf },
+                      buildStats(buf.byteLength),
+                      context,
+                      null,
+                    );
+                  })
+                  .catch(() => {
+                    context.url = urlWithToken;
+                    super.load(context, config, callbacks);
+                  });
+                return;
+              }
+            }
+
+            context.url = urlWithToken;
+            super.load(context, config, callbacks);
+          }
+        }
+
+        hls = new window.Hls({
+          lowLatencyMode: true,
+          enableWorker: true,
+          backBufferLength: 30,
+          maxBufferLength: 6,
+          liveSyncDurationCount: 2,
+          loader: TokenLoader,
+        });
+
+        hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+          hideOverlay();
+          video.play().catch(() => {});
+        });
+
+        hls.on(window.Hls.Events.ERROR, (_evt, data) => {
+          if (!data || !data.fatal) return;
+          // A 403 usually means the token expired mid-request.
+          if (data.response && data.response.code === 403) {
+            refreshToken();
+            hls.startLoad();
+            return;
+          }
+          switch (data.type) {
+            case window.Hls.ErrorTypes.NETWORK_ERROR:
+              hls.startLoad();
+              break;
+            case window.Hls.ErrorTypes.MEDIA_ERROR:
+              hls.recoverMediaError();
+              break;
+            default:
+              showOverlay('Playback error', 'The stream is unavailable. Retrying…');
+              setTimeout(() => window.location.reload(), 5000);
+          }
+        });
+
+        hls.loadSource(tokenized(hlsUrl));
+        hls.attachMedia(video);
+      } else if (isNative) {
+        // Safari / iOS: native HLS. The token rides in the playlist URL and
+        // in the short-lived ari_play cookie (set by /authorize) so segment
+        // requests are also authorized.
+        video.src = tokenized(hlsUrl);
+        video.addEventListener('loadedmetadata', () => {
+          hideOverlay();
+          video.play().catch(() => {});
+        });
+        video.addEventListener('error', () => {
+          showOverlay('Playback error', 'This browser could not play the stream.');
+        });
+      } else {
+        showOverlay('Unsupported browser', 'HLS playback is not supported here.');
+      }
+    }
+
+    // ── Boot ───────────────────────────────────────────────────────────
+    async function boot() {
+      if (!STREAM_KEY) {
+        showOverlay('No stream specified', 'Add ?key=YOUR_STREAM_KEY to the URL.');
+        return;
+      }
+
+      const embedHost = detectEmbedHost();
+
+      // 1) Advisory client-side domain check.
+      const check = await postJson('/api/playback/check-domain', { host: embedHost });
+      if (check.ok && check.data && check.data.allowed === false) {
+        showOverlay('Playback blocked', `This domain (${embedHost}) is not authorized to embed this stream.`);
+        return;
+      }
+
+      // 2) Authorize: creates a viewer session, generates the watermark and
+      //    issues the first short-lived token.
+      const auth = await postJson('/api/playback/authorize', { streamKey: STREAM_KEY, embedHost });
+      if (!auth.ok) {
+        const err = auth.data && auth.data.error;
+        if (err === 'domain_not_whitelisted') {
+          showOverlay('Playback blocked', `This domain (${embedHost}) is not authorized to embed this stream.`);
+        } else if (err === 'stream_unavailable') {
+          showOverlay('Stream unavailable', 'The stream is offline or disabled.');
+        } else {
+          showOverlay('Playback error', 'Could not authorize playback.');
+        }
+        return;
+      }
+
+      currentToken = auth.data.token;
+      applyWatermark(auth.data.watermark || '');
+      scheduleRefresh(auth.data.refreshIn || 45);
+      await initP2P();
+      startPlayback(auth.data.hlsUrl);
+    }
+
+    // Start the P2P swarm engine (best-effort; never blocks playback).
+    async function initP2P() {
+      if (!window.AriP2P) return;
+      try {
+        const res = await fetch('/api/p2p/config', { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const cfg = await res.json();
+        if (!cfg.enabled) return;
+        const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        p2p = new window.AriP2P({
+          trackerUrl: `${wsProto}://${window.location.host}${cfg.trackerPath || '/p2p'}`,
+          key: STREAM_KEY,
+          token: currentToken,
+          iceServers: cfg.iceServers || [],
+          maxPeers: cfg.maxPeers || 5,
+        });
+        p2p.connect();
+      } catch {
+        /* P2P is optional — ignore */
+      }
+    }
+
+    window.addEventListener('beforeunload', () => {
+      destroyed = true;
+      clearTimeout(refreshTimer);
+      if (p2p) { try { p2p.destroy(); } catch { /* ignore */ } }
+      if (hls) { try { hls.destroy(); } catch { /* ignore */ } }
+    });
+
+    boot();
+  </script>
+</body>
+</html>

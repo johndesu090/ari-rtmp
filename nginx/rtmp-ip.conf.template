@@ -1,0 +1,33 @@
+# ── Ari RTMP — RTMP ingest (IP / HTTP mode) ────────────────────────────
+# Rendered by install.sh into /usr/local/nginx/conf/rtmp.conf
+# Placeholders: __APP_PORT__ __HLS_ROOT__ __TRANSCODE_SCRIPT__ __INTERNAL_TOKEN__
+
+rtmp {
+    server {
+        listen 1935;
+        chunk_size 4096;
+        max_message 8M;
+        ping 30s;
+        ping_timeout 30s;
+
+        # Reject unknown/inactive stream keys synchronously via the backend.
+        # nginx-rtmp only proceeds when the webhook returns 2xx.
+        application live {
+            live on;
+            record off;
+            meta copy;
+
+            allow publish all;
+            allow play all;
+
+            # Strict stream-key enforcement.
+            on_publish      http://127.0.0.1:__APP_PORT__/api/rtmp/on_publish;
+            on_publish_done http://127.0.0.1:__APP_PORT__/api/rtmp/on_publish_done;
+
+            # Spawn the ABR transcoder for each publishing client.
+            # nginx-rtmp substitutes $name with the stream key.
+            exec_kill_signal term;
+            exec __TRANSCODE_SCRIPT__ $name;
+        }
+    }
+}

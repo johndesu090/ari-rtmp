@@ -1,0 +1,67 @@
+// Ari RTMP — Prisma schema
+// PostgreSQL. Run `npx prisma db push` (or migrate) after install.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Admin {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  lastLoginAt  DateTime?
+}
+
+model Stream {
+  id        String   @id @default(cuid())
+  title     String
+  streamKey String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  viewers   ViewerSession[]
+
+  @@index([isActive])
+}
+
+model WhitelistedDomain {
+  id        String   @id @default(cuid())
+  domain    String   @unique
+  createdAt DateTime @default(now())
+}
+
+model ViewerSession {
+  id        String   @id @default(cuid())
+  watermark String   @unique
+  ipAddress String
+  userAgent String?
+  streamId  String
+  stream    Stream   @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  lastSeen  DateTime @default(now())
+
+  @@index([streamId])
+  @@index([ipAddress])
+  @@index([lastSeen])
+}
+
+// Periodic P2P swarm telemetry written by the signaling tracker. Each row is
+// a delta window (bytes transferred since the previous snapshot).
+model P2PSnapshot {
+  id          String   @id @default(cuid())
+  streamKey   String
+  peers       Int      @default(0)
+  p2pBytes    Float    @default(0)
+  serverBytes Float    @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([streamKey])
+  @@index([createdAt])
+}

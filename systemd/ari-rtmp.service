@@ -1,0 +1,28 @@
+[Unit]
+Description=Ari RTMP API and dashboard (Node.js)
+Documentation=file:/opt/ari-rtmp/README.md
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/ari-rtmp
+EnvironmentFile=/opt/ari-rtmp/.env
+ExecStart=/usr/bin/node /opt/ari-rtmp/src/server.js
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ari-rtmp
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/ari-rtmp
+
+[Install]
+WantedBy=multi-user.target
