@@ -171,7 +171,7 @@
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <code id="regToken" class="flex-1 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">—</code>
+          <code id="regToken" class="flex-1 min-w-0 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">—</code>
           <button id="copyToken" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button>
         </div>
         <p class="text-xs text-slate-500 mt-2">Paste this into the edge installer. Rotating invalidates it for new registrations.</p>
@@ -209,11 +209,11 @@
   </div>
 
   <!-- ── Admin-only stream preview ── -->
-  <div id="previewModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4">
-    <div class="w-full max-w-3xl">
-      <div class="flex items-center justify-between mb-2">
-        <h3 id="previewTitle" class="font-semibold text-slate-100">Preview</h3>
-        <button id="previewClose" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm transition">Close</button>
+  <div id="previewModal" class="fixed inset-0 z-50 hidden items-center justify-center overflow-y-auto bg-black/70 p-3 sm:p-4">
+    <div class="w-full max-w-3xl my-auto">
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <h3 id="previewTitle" class="font-semibold text-slate-100 min-w-0 truncate">Preview</h3>
+        <button id="previewClose" class="shrink-0 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm transition">Close</button>
       </div>
       <div class="aspect-video bg-black rounded-xl overflow-hidden border border-slate-800">
         <iframe id="previewFrame" class="w-full h-full" allow="autoplay; encrypted-media" frameborder="0" referrerpolicy="strict-origin-when-cross-origin"></iframe>
@@ -311,21 +311,21 @@
           <div class="md:col-span-2">
             <dt class="text-slate-500 text-xs mb-1">Stream key</dt>
             <dd class="flex items-center gap-2">
-              <code class="flex-1 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">${escapeHtml(s.streamKey)}</code>
-              <button data-copy="${escapeHtml(s.streamKey)}" class="copy px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button>
+              <code class="flex-1 min-w-0 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">${escapeHtml(s.streamKey)}</code>
+              <button data-copy="${escapeHtml(s.streamKey)}" class="copy shrink-0 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button>
             </dd>
           </div>
           <div>
             <dt class="text-slate-500 text-xs mb-1">RTMP ingest</dt>
-            <dd class="flex items-center gap-2"><code class="flex-1 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">${escapeHtml(s.rtmpUrl)}</code><button data-copy="${escapeHtml(s.rtmpUrl)}" class="copy px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button></dd>
+            <dd class="flex items-center gap-2"><code class="flex-1 min-w-0 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">${escapeHtml(s.rtmpUrl)}</code><button data-copy="${escapeHtml(s.rtmpUrl)}" class="copy shrink-0 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button></dd>
           </div>
           <div>
             <dt class="text-slate-500 text-xs mb-1">HLS URL</dt>
-            <dd class="flex items-center gap-2"><code class="flex-1 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">${escapeHtml(s.hlsUrl)}</code><button data-copy="${escapeHtml(s.hlsUrl)}" class="copy px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button></dd>
+            <dd class="flex items-center gap-2"><code class="flex-1 min-w-0 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">${escapeHtml(s.hlsUrl)}</code><button data-copy="${escapeHtml(s.hlsUrl)}" class="copy shrink-0 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button></dd>
           </div>
           <div class="md:col-span-2">
             <dt class="text-slate-500 text-xs mb-1">Embed iframe</dt>
-            <dd class="flex items-center gap-2"><code class="flex-1 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">&lt;iframe src="${escapeHtml(s.embedUrl)}" width="854" height="480" allow="autoplay"&gt;&lt;/iframe&gt;</code><button data-copy='<iframe src="${escapeHtml(s.embedUrl)}" width="854" height="480" allow="autoplay"></iframe>' class="copy px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button></dd>
+            <dd class="flex items-center gap-2"><code class="flex-1 min-w-0 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">&lt;iframe src="${escapeHtml(s.embedUrl)}" width="854" height="480" allow="autoplay"&gt;&lt;/iframe&gt;</code><button data-copy='<iframe src="${escapeHtml(s.embedUrl)}" width="854" height="480" allow="autoplay"></iframe>' class="copy shrink-0 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button></dd>
           </div>
         </dl>
       </div>`;
@@ -411,9 +411,9 @@
         return;
       }
       list.innerHTML = domains.map(d => `
-        <div class="flex items-center justify-between px-4 py-3 rounded-xl bg-slate-900 border border-slate-800">
-          <span class="text-sm">${escapeHtml(d.domain)}</span>
-          <button data-del-domain="${d.id}" class="px-3 py-1.5 rounded-lg bg-red-950 hover:bg-red-900 border border-red-900 text-xs transition">Remove</button>
+        <div class="flex items-center justify-between gap-2 px-4 py-3 rounded-xl bg-slate-900 border border-slate-800">
+          <span class="text-sm min-w-0 truncate">${escapeHtml(d.domain)}</span>
+          <button data-del-domain="${d.id}" class="shrink-0 px-3 py-1.5 rounded-lg bg-red-950 hover:bg-red-900 border border-red-900 text-xs transition">Remove</button>
         </div>`).join('');
     }
 
