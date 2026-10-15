@@ -257,6 +257,18 @@ test('viewer log records the watermark ↔ IP relationship', async () => {
   assert.equal(row.stream.streamKey, streamKey);
 });
 
+test('authorize records the real client IP from CF-Connecting-IP', async () => {
+  const { res, data } = await api('POST', '/api/playback/authorize', {
+    body: { streamKey, embedHost: 'example.com' },
+    headers: { 'CF-Connecting-IP': '203.0.113.7' },
+  });
+  assert.equal(res.status, 200);
+  const list = await api('GET', '/api/viewers', { auth: true });
+  const row = list.data.viewers.find((v) => v.watermark === data.watermark);
+  assert.ok(row, 'expected the viewer session to be logged');
+  assert.equal(row.ipAddress, '203.0.113.7');
+});
+
 // ── Domain whitelisting ────────────────────────────────────────────────────
 test('adding a domain then enforcing it on authorize', async () => {
   const add = await api('POST', '/api/whitelist', { auth: true, body: { domain: 'example.com' } });

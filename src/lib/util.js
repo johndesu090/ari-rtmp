@@ -3,10 +3,20 @@ import crypto from 'node:crypto';
 // Small shared helpers.
 
 /**
- * Resolve the client IP, honouring the reverse proxy set up by install.sh.
- * Nginx sets X-Real-IP and X-Forwarded-For; we prefer X-Real-IP.
+ * Resolve the client IP.
+ *
+ * Behind Cloudflare the origin only sees Cloudflare's edge IP in
+ * `$remote_addr` / `X-Real-IP`; the real client is in `CF-Connecting-IP`
+ * (and `True-Client-IP` on Enterprise). We prefer those, then fall back to
+ * the proxy headers nginx sets for direct/other-proxy deployments.
+ *
+ * NOTE: these headers are trusted. Keep the origin reachable only through
+ * the proxy (Cloudflare) so they cannot be spoofed.
  */
 export function clientIp(req) {
+  const cf = req.headers['cf-connecting-ip'] || req.headers['true-client-ip'];
+  if (cf) return String(cf).trim();
+
   const real = req.headers['x-real-ip'];
   if (real) return String(real).trim();
 

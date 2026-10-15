@@ -45,22 +45,21 @@
       80%  { transform: translate(58vw, 30vh); }
       100% { transform: translate(12vw, 8vh); }
     }
-    /* A second, slower ghost mark for redundancy. */
-    #watermark2 {
-      position: absolute; bottom: 10%; right: 8%;
-      pointer-events: none; user-select: none;
-      font-family: ui-monospace, monospace; font-weight: 700;
-      font-size: clamp(11px, 2.2vw, 20px); letter-spacing: 0.14em;
-      color: rgba(255, 255, 255, 0.16);
-      text-shadow: 0 1px 3px rgba(0,0,0,0.6);
-      animation: drift2 37s linear infinite alternate;
-      z-index: 5;
+    /* ── Center play button (click to start; no autoplay) ── */
+    #playButton {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 84px; height: 84px; border: 0; border-radius: 50%;
+      background: rgba(15, 23, 42, 0.65);
+      color: #fff; cursor: pointer; z-index: 10;
+      display: flex; align-items: center; justify-content: center;
+      backdrop-filter: blur(2px);
+      transition: transform 0.12s ease, background 0.12s ease;
+      -webkit-tap-highlight-color: transparent;
     }
-    @keyframes drift2 {
-      0% { transform: translate(0,0); }
-      50% { transform: translate(-46vw, -34vh); }
-      100% { transform: translate(-6vw, -6vh); }
-    }
+    #playButton:hover { background: rgba(79, 70, 229, 0.85); transform: translate(-50%, -50%) scale(1.06); }
+    #playButton.hidden { display: none; }
+    #playButton svg { width: 40px; height: 40px; margin-left: 5px; }
 
     /* ── Overlay (loading / errors / domain block) ── */
     #overlay {
@@ -99,7 +98,10 @@
     ></video>
 
     <div id="watermark"></div>
-    <div id="watermark2"></div>
+
+    <button id="playButton" aria-label="Play" title="Play">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+    </button>
 
     <div id="overlay">
       <div class="box">
@@ -134,7 +136,7 @@
     const overlayTitle = document.getElementById('overlayTitle');
     const overlayText = document.getElementById('overlayText');
     const wm1 = document.getElementById('watermark');
-    const wm2 = document.getElementById('watermark2');
+    const playButton = document.getElementById('playButton');
 
     function showOverlay(title, text, loading = false) {
       overlayTitle.textContent = title;
@@ -143,6 +145,19 @@
       overlay.classList.remove('hidden');
     }
     function hideOverlay() { overlay.classList.add('hidden'); }
+
+    // ── Center play button (no autoplay) ───────────────────────────────
+    function showPlayButton() { playButton.classList.remove('hidden'); }
+    function hidePlayButton() { playButton.classList.add('hidden'); }
+    playButton.addEventListener('click', () => {
+      hidePlayButton();
+      video.play().catch(() => showPlayButton());
+    });
+    video.addEventListener('play', hidePlayButton);
+    video.addEventListener('pause', () => {
+      // Keep the button hidden when the stream has simply ended.
+      if (!video.ended) showPlayButton();
+    });
 
     // ── Determine the embedding host ───────────────────────────────────
     // Sends the host we are embedded on so the backend can enforce the
@@ -162,7 +177,6 @@
     function applyWatermark(text) {
       watermarkText = text;
       wm1.textContent = text;
-      wm2.textContent = text;
       // Rotate positions a little so a screenshot always contains the mark.
       const jitter = () => `${(Math.random() * 8 - 4).toFixed(1)}vw`;
       setInterval(() => {
@@ -370,7 +384,7 @@
 
         hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
           hideOverlay();
-          video.play().catch(() => {});
+          showPlayButton(); // no autoplay — wait for a click
         });
 
         hls.on(window.Hls.Events.ERROR, (_evt, data) => {
@@ -409,7 +423,7 @@
         video.src = tokenized(hlsUrl);
         video.addEventListener('loadedmetadata', () => {
           hideOverlay();
-          video.play().catch(() => {});
+          showPlayButton(); // no autoplay — wait for a click
         });
         video.addEventListener('error', () => {
           showOverlay('Playback error', 'This browser could not play the stream.');

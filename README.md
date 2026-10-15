@@ -435,6 +435,14 @@ curl -sSIL http://your-domain | grep -iE 'HTTP/|^location'
 curl -sSIL https://your-domain | grep -iE 'HTTP/|^location'
 ```
 
+### Viewer IP shows a Cloudflare address
+
+Behind Cloudflare the origin only sees Cloudflare's edge IP in the TCP source.
+The app reads the real client from **`CF-Connecting-IP`** (falling back to
+`X-Real-IP` / `X-Forwarded-For`), so the Viewer Log records the actual viewer.
+This trusts those headers, so keep the origin reachable only through Cloudflare
+(block direct access to the origin IP) — otherwise the header can be spoofed.
+
 ### Other checks
 
 ```bash
