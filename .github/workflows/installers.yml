@@ -83,6 +83,27 @@ jobs:
           echo "HLS without token -> HTTP $code (expected 403)"
           [ "$code" = "403" ] || exit 1
 
+      - name: Validate SSL Nginx configuration (RTMPS + HTTPS)
+        run: |
+          set -e
+          DOMAIN=ci.test.local
+          CERTDIR="/etc/letsencrypt/live/$DOMAIN"
+          sudo mkdir -p "$CERTDIR"
+          sudo openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout "$CERTDIR/privkey.pem" -out "$CERTDIR/fullchain.pem" \
+            -subj "/CN=$DOMAIN" >/dev/null 2>&1
+          APP=/opt/ari-rtmp
+          sudo sed \
+            -e "s|__APP_UPSTREAM__|127.0.0.1:3000|g" \
+            -e "s|__HLS_ROOT__|/var/www/hls|g" \
+            -e "s|__SERVER_NAME__|$DOMAIN|g" \
+            -e "s|__INTERNAL_TOKEN__|ci-internal|g" \
+            -e "s|__SSL_CERT__|$CERTDIR/fullchain.pem|g" \
+            -e "s|__SSL_KEY__|$CERTDIR/privkey.pem|g" \
+            "$APP/nginx/nginx-ssl.conf.template" | sudo tee /usr/local/nginx/conf/nginx.conf >/dev/null
+          sudo /usr/local/nginx/sbin/nginx -t
+          echo "✓ SSL config (HTTPS + RTMPS stream block) is valid"
+
       - name: Collect diagnostics on failure
         if: failure()
         run: |

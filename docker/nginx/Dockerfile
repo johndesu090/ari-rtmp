@@ -29,6 +29,8 @@ RUN ./configure \
       --with-http_stub_status_module \
       --with-http_secure_link_module \
       --with-http_gzip_static_module \
+      --with-stream \
+      --with-stream_ssl_module \
       --with-threads \
       --add-module=/src/nginx-rtmp-module \
     && make -j"$(nproc)" \

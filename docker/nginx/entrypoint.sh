@@ -39,12 +39,13 @@ chmod +x "${TRANSCODE_SCRIPT}"
 if [[ "${SERVER_NAME}" != "_" && -f "${SSL_CERT}" ]]; then
   echo "[nginx] SSL mode for ${SERVER_NAME}"
   render "${TPL_DIR}/nginx-ssl.conf.template" "${NGINX_CONF}"
-  render "${TPL_DIR}/rtmp-ssl.conf.template"  "${RTMP_CONF}"
 else
   echo "[nginx] HTTP mode (server_name=${SERVER_NAME})"
   render "${TPL_DIR}/nginx-ip.conf.template" "${NGINX_CONF}"
-  render "${TPL_DIR}/rtmp-ip.conf.template"  "${RTMP_CONF}"
 fi
+# The RTMP ingest block is identical in both modes; RTMPS (:1936) is
+# terminated by the stream{} block in the SSL nginx.conf.
+render "${TPL_DIR}/rtmp-ip.conf.template" "${RTMP_CONF}"
 
 /usr/local/nginx/sbin/nginx -t
 echo "[nginx] starting (app upstream: ${APP_UPSTREAM})"

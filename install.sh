@@ -184,6 +184,8 @@ cd "nginx-${NGINX_VERSION}"
   --with-http_stub_status_module \
   --with-http_secure_link_module \
   --with-http_gzip_static_module \
+  --with-stream \
+  --with-stream_ssl_module \
   --with-threads \
   --add-module=/usr/local/src/nginx-rtmp-module
 make -j"$(nproc)"
@@ -320,8 +322,10 @@ if [[ "${USE_SSL}" == "yes" ]]; then
         --agree-tos --non-interactive --keep-until-expiring; then
 
     info "Certificate issued. Switching Nginx to HTTPS + RTMPS."
+    # The RTMP block is identical in both modes; only nginx.conf changes
+    # (the SSL config adds a stream{} block that terminates RTMPS on :1936
+    # and proxies the decrypted RTMP to :1935).
     render_template "${APP_DIR}/nginx/nginx-ssl.conf.template" "${NGINX_PREFIX}/conf/nginx.conf"
-    render_template "${APP_DIR}/nginx/rtmp-ssl.conf.template"  "${NGINX_PREFIX}/conf/rtmp.conf"
 
     # Reload nginx whenever a certificate is renewed.
     mkdir -p /etc/letsencrypt/renewal-hooks/deploy

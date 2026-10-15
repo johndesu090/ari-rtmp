@@ -75,6 +75,8 @@ const REQUIRED_CONFIGURE_FLAGS = [
   '--with-http_auth_request_module',
   '--with-http_ssl_module',
   '--with-http_v2_module',
+  '--with-stream',
+  '--with-stream_ssl_module',
 ];
 for (const rel of ['install.sh', 'docker/nginx/Dockerfile']) {
   const text = readFileSync(join(root, rel), 'utf8');

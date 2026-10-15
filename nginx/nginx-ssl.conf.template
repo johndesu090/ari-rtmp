@@ -137,3 +137,26 @@ http {
         }
     }
 }
+
+# ── RTMPS (TLS ingest) on port 1936 ────────────────────────────────────
+# nginx-rtmp has no `listen ssl`, so TLS is terminated by the stream module
+# and the decrypted RTMP is proxied to the plain ingest port 1935.
+stream {
+    upstream rtmp_ingest {
+        server 127.0.0.1:1935;
+    }
+
+    server {
+        listen 1936 ssl;
+        listen [::]:1936 ssl;
+
+        proxy_pass rtmp_ingest;
+        proxy_connect_timeout 5s;
+        proxy_timeout 10m;
+
+        ssl_certificate     __SSL_CERT__;
+        ssl_certificate_key __SSL_KEY__;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers HIGH:!aNULL:!MD5;
+    }
+}
