@@ -104,6 +104,18 @@ jobs:
           sudo /usr/local/nginx/sbin/nginx -t
           echo "✓ SSL config (HTTPS + RTMPS stream block) is valid"
 
+      - name: Verify no unrendered placeholders remain
+        run: |
+          set -e
+          if grep -rn '__[A-Z_]*__' \
+               /opt/ari-rtmp/bin/hls-transcode.sh \
+               /usr/local/nginx/conf/nginx.conf \
+               /usr/local/nginx/conf/rtmp.conf; then
+            echo "✗ unrendered placeholders found in installed files"; exit 1
+          fi
+          grep -q '/var/www/hls' /opt/ari-rtmp/bin/hls-transcode.sh
+          echo "✓ transcode script and Nginx config are fully rendered"
+
       - name: Collect diagnostics on failure
         if: failure()
         run: |

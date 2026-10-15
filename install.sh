@@ -276,6 +276,14 @@ render_template() {
     "${tpl}" > "${out}"
 }
 
+# Render the ABR transcoder script (substitute HLS root + ingest URL). Without
+# this the script would still contain literal placeholders and ffmpeg would
+# fail to read the source, producing no HLS at all.
+render_template "${APP_DIR}/bin/hls-transcode.sh" "${APP_DIR}/bin/hls-transcode.sh.rendered"
+mv "${APP_DIR}/bin/hls-transcode.sh.rendered" "${APP_DIR}/bin/hls-transcode.sh"
+chmod +x "${APP_DIR}/bin/hls-transcode.sh"
+chown www-data:www-data "${APP_DIR}/bin/hls-transcode.sh"
+
 # Always start with the IP/HTTP configuration so port 80 is available for
 # the ACME challenge (and works immediately in the non-SSL case).
 render_template "${APP_DIR}/nginx/nginx-ip.conf.template" "${NGINX_PREFIX}/conf/nginx.conf"
