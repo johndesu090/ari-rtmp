@@ -9,7 +9,7 @@ import {
   playbackCookieName,
   playbackCookieOptions,
 } from '../lib/tokens.js';
-import { clientIp, normalizeHost, hostMatchesWhitelist } from '../lib/util.js';
+import { clientIp, clientNetwork, normalizeHost, hostMatchesWhitelist } from '../lib/util.js';
 import { getEdgePool } from '../lib/edges.js';
 import {
   cachePlaybackSession,
@@ -34,41 +34,38 @@ async function buildSegmentOrigins() {
   }
 }
 
-function resolveEmbedHost(req) {
-  // The player computes the embedding host (document.referrer /
-  // ancestorOrigins) and sends it explicitly. Fall back to Origin/Referer.
-  const explicit = normalizeHost(req.body?.embedHost);
-  if (explicit) return explicit;
-
-  const origin = normalizeHost(req.headers.origin);
-  if (origin) return origin;
-
-  const referer = req.headers.referer;
-  if (referer) return normalizeHost(referer);
-
-  return '';
+// Collect every candidate embedding host. The player sends the referrer and
+// ancestor origins (a nested srcdoc iframe can make the referrer an empty
+// "about:" URL); we also fall back to Origin/Referer headers.
+function resolveEmbedHosts(req) {
+  const hosts = [];
+  const add = (value) => {
+    const h = normalizeHost(value);
+    if (h && !hosts.includes(h)) hosts.push(h);
+  };
+  if (Array.isArray(req.body?.embedHosts)) req.body.embedHosts.forEach(add);
+  add(req.body?.embedHost);
+  add(req.headers.origin);
+  add(req.headers.referer);
+  return hosts;
 }
 
-async function isEmbedAllowed(embedHost) {
+async function isEmbedAllowed(hosts) {
   const ownHost = normalizeHost(config.publicBaseUrl);
 
   // Same-origin (direct visit) is always allowed.
-  if (embedHost && embedHost === ownHost) return true;
+  if (hosts.some((h) => h === ownHost)) return true;
 
-  const approved = await prisma.whitelistedDomain.findMany({
-    select: { domain: true },
-  });
+  const approved = await prisma.whitelistedDomain.findMany({ select: { domain: true } });
 
   // No whitelist configured → no embed restriction.
   if (approved.length === 0) return true;
 
   // A whitelist is active: an unknown embedding origin is denied.
-  if (!embedHost) return false;
+  if (hosts.length === 0) return false;
 
-  return hostMatchesWhitelist(
-    embedHost,
-    approved.map((d) => d.domain),
-  );
+  const domains = approved.map((d) => d.domain);
+  return hosts.some((h) => hostMatchesWhitelist(h, domains));
 }
 
 function hlsUrlFor(streamKey) {
@@ -80,10 +77,16 @@ function hlsUrlFor(streamKey) {
 // only — /authorize performs the authoritative check.
 // POST /api/playback/check-domain  { host }
 router.post('/check-domain', async (req, res) => {
-  const host = normalizeHost(req.body?.host);
+  const hosts = [];
+  const add = (v) => {
+    const h = normalizeHost(v);
+    if (h && !hosts.includes(h)) hosts.push(h);
+  };
+  if (Array.isArray(req.body?.hosts)) req.body.hosts.forEach(add);
+  add(req.body?.host);
   try {
-    const allowed = await isEmbedAllowed(host);
-    return res.json({ allowed, host });
+    const allowed = await isEmbedAllowed(hosts);
+    return res.json({ allowed, hosts, host: hosts[0] || '' });
   } catch (err) {
     console.error('[playback] check-domain failed:', err);
     return res.status(500).json({ error: 'internal_error' });
@@ -104,30 +107,42 @@ router.post('/authorize', async (req, res) => {
       return res.status(403).json({ error: 'stream_unavailable' });
     }
 
-    const embedHost = resolveEmbedHost(req);
-    if (!(await isEmbedAllowed(embedHost))) {
-      return res.status(403).json({ error: 'domain_not_whitelisted', embedHost });
+    const embedHosts = resolveEmbedHosts(req);
+    if (!(await isEmbedAllowed(embedHosts))) {
+      return res.status(403).json({
+        error: 'domain_not_whitelisted',
+        embedHost: embedHosts[0] || '',
+        embedHosts,
+      });
     }
 
     const ip = clientIp(req);
+    const networkKey = clientNetwork(ip);
     const userAgent = String(req.headers['user-agent'] || '').slice(0, 512);
 
-    // One stable watermark per viewer IP: reuse the existing session (and its
-    // watermark) if this IP already has one; otherwise create a new session.
+    // One stable watermark per viewer network. Reuse the session for this
+    // network key (or, for rows created before networkKey existed, the exact
+    // IP); otherwise create a new session with a fresh watermark.
     let session = await prisma.viewerSession.findFirst({
-      where: { ipAddress: ip },
+      where: { networkKey },
       orderBy: { lastSeen: 'desc' },
     });
+    if (!session) {
+      session = await prisma.viewerSession.findFirst({
+        where: { ipAddress: ip },
+        orderBy: { lastSeen: 'desc' },
+      });
+    }
 
     if (session) {
       session = await prisma.viewerSession.update({
         where: { id: session.id },
-        data: { streamId: stream.id, userAgent, lastSeen: new Date() },
+        data: { streamId: stream.id, userAgent, lastSeen: new Date(), ipAddress: ip, networkKey },
       });
     } else {
       const newWatermark = await uniqueWatermark();
       session = await prisma.viewerSession.create({
-        data: { watermark: newWatermark, ipAddress: ip, userAgent, streamId: stream.id },
+        data: { watermark: newWatermark, ipAddress: ip, networkKey, userAgent, streamId: stream.id },
       });
     }
 

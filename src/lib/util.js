@@ -69,3 +69,56 @@ export function timingSafeEqualStr(a, b) {
   if (ba.length !== bb.length) return false;
   return crypto.timingSafeEqual(ba, bb);
 }
+
+// ── Network identity ───────────────────────────────────────────────────
+// IPv6 hosts use SLAAC privacy addresses: every device has a random interface
+// identifier that also rotates over time, so the full address is unstable.
+// The network (the /64 prefix) is stable, so we group IPv6 viewers by /64 and
+// leave IPv4 addresses as-is. This keeps a watermark stable per network.
+function ipv6ToBytes(input) {
+  let ip = String(input).trim();
+  const zone = ip.indexOf('%');
+  if (zone !== -1) ip = ip.slice(0, zone);
+  if (ip.includes('.')) {
+    const lastColon = ip.lastIndexOf(':');
+    if (lastColon === -1) return null;
+    const v4 = ip.slice(lastColon + 1).split('.');
+    if (v4.length !== 4) return null;
+    const b = v4.map((p) => Number(p));
+    if (b.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+    ip = `${ip.slice(0, lastColon + 1)}${(((b[0] << 8) | b[1]).toString(16))}:${(((b[2] << 8) | b[3]).toString(16))}`;
+  }
+  const halves = ip.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  if (halves.length === 1 && head.length !== 8) return null;
+  const missing = 8 - head.length - tail.length;
+  if (missing < 0) return null;
+  const hextets = [...head, ...Array(missing).fill('0'), ...tail];
+  if (hextets.length !== 8) return null;
+  const bytes = [];
+  for (const h of hextets) {
+    if (!/^[0-9a-fA-F]{1,4}$/.test(h)) return null;
+    const v = parseInt(h, 16);
+    bytes.push((v >> 8) & 0xff, v & 0xff);
+  }
+  return bytes;
+}
+
+export function clientNetwork(ip) {
+  const s = String(ip || '').trim();
+  if (!s) return '';
+  if (!s.includes(':')) return s; // IPv4: use the full address
+  const bytes = ipv6ToBytes(s);
+  if (!bytes) return s; // unparseable: fall back to the raw value
+  // IPv4-mapped IPv6 (::ffff:a.b.c.d) → treat as the plain IPv4 address.
+  if (bytes.slice(0, 10).every((b) => b === 0) && bytes[10] === 0xff && bytes[11] === 0xff) {
+    return `${bytes[12]}.${bytes[13]}.${bytes[14]}.${bytes[15]}`;
+  }
+  const hextets = [];
+  for (let i = 0; i < 8; i += 2) {
+    hextets.push(((bytes[i] << 8) | bytes[i + 1]).toString(16));
+  }
+  return `${hextets.join(':')}::/64`;
+}

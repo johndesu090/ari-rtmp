@@ -285,6 +285,22 @@ test('the same IP reuses its watermark; a different IP gets a new one', async ()
   assert.notEqual(b.data.watermark, a1.data.watermark, 'a different IP should get a different watermark');
 });
 
+test('devices on the same IPv6 /64 share a watermark', async () => {
+  const auth = (ip) =>
+    api('POST', '/api/playback/authorize', {
+      body: { streamKey, embedHost: 'localhost' },
+      headers: { 'CF-Connecting-IP': ip },
+    });
+
+  const a = await auth('2001:fd8:ba41:c504:ed8c:7c28:d3f7:33ec');
+  const b = await auth('2001:fd8:ba41:c504:c119:a150:8652:31fc');
+  assert.equal(a.res.status, 200);
+  assert.equal(a.data.watermark, b.data.watermark, 'same /64 should reuse the watermark');
+
+  const c = await auth('2001:fd8:ba41:c505::1');
+  assert.notEqual(c.data.watermark, a.data.watermark, 'a different /64 should get a new watermark');
+});
+
 // ── Domain whitelisting ────────────────────────────────────────────────────
 test('adding a domain then enforcing it on authorize', async () => {
   const add = await api('POST', '/api/whitelist', { auth: true, body: { domain: 'example.com' } });
@@ -307,6 +323,15 @@ test('check-domain mirrors the whitelist decision', async () => {
   assert.equal(bad.data.allowed, false);
   const good = await api('POST', '/api/playback/check-domain', { body: { host: 'example.com' } });
   assert.equal(good.data.allowed, true);
+});
+
+test('authorize accepts any whitelisted candidate in embedHosts', async () => {
+  await api('POST', '/api/whitelist', { auth: true, body: { domain: 'w3schools.com' } });
+  // embedHost is empty (nested srcdoc iframe) but an ancestor origin matches.
+  const ok = await api('POST', '/api/playback/authorize', {
+    body: { streamKey, embedHost: '', embedHosts: ['', 'www.w3schools.com'] },
+  });
+  assert.equal(ok.res.status, 200);
 });
 
 // ── P2P config ─────────────────────────────────────────────────────────────

@@ -158,18 +158,26 @@
       if (!video.ended) showPlayButton();
     });
 
-    // ── Determine the embedding host ───────────────────────────────────
-    // Sends the host we are embedded on so the backend can enforce the
-    // whitelist. Falls back to our own host for direct visits.
-    function detectEmbedHost() {
-      try {
-        if (document.referrer) return new URL(document.referrer).hostname;
-      } catch { /* ignore */ }
+    // ── Determine the embedding host(s) ────────────────────────────────
+    // Collects the referrer and every ancestor origin so the backend can
+    // enforce the whitelist. A nested `srcdoc` iframe (e.g. some online
+    // editors) makes document.referrer an opaque "about:" URL, so we gather
+    // all candidates and let the backend accept any that is whitelisted.
+    function detectEmbedHosts() {
+      const hosts = [];
+      const add = (value) => {
+        try {
+          const h = new URL(value).hostname;
+          if (h && !hosts.includes(h)) hosts.push(h);
+        } catch { /* ignore opaque/invalid URLs */ }
+      };
+      try { if (document.referrer) add(document.referrer); } catch { /* ignore */ }
       try {
         const anc = window.location.ancestorOrigins;
-        if (anc && anc.length) return new URL(anc[0]).hostname;
+        if (anc) for (let i = 0; i < anc.length; i += 1) add(anc[i]);
       } catch { /* ignore */ }
-      return window.location.hostname;
+      if (hosts.length === 0) hosts.push(window.location.hostname);
+      return hosts;
     }
 
     // ── Watermark rendering ────────────────────────────────────────────
@@ -439,10 +447,11 @@
         return;
       }
 
-      const embedHost = detectEmbedHost();
+      const embedHosts = detectEmbedHosts();
+      const embedHost = embedHosts[0];
 
       // 1) Advisory client-side domain check.
-      const check = await postJson('/api/playback/check-domain', { host: embedHost });
+      const check = await postJson('/api/playback/check-domain', { host: embedHost, hosts: embedHosts });
       if (check.ok && check.data && check.data.allowed === false) {
         showOverlay('Playback blocked',
           `This domain (${embedHost}) is not whitelisted. Add "${embedHost}" under Whitelist in the dashboard.`);
@@ -451,7 +460,7 @@
 
       // 2) Authorize: creates a viewer session, generates the watermark and
       //    issues the first short-lived token.
-      const auth = await postJson('/api/playback/authorize', { streamKey: STREAM_KEY, embedHost });
+      const auth = await postJson('/api/playback/authorize', { streamKey: STREAM_KEY, embedHost, embedHosts });
       if (!auth.ok) {
         const err = auth.data && auth.data.error;
         console.warn('[player] authorize failed', err, auth.data);

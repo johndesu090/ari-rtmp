@@ -137,7 +137,7 @@ Data lives in named volumes: `db_data`, `redis_data`, `hls`, `letsencrypt`.
 | Token auto-refresh | `player.html` refreshes ~before expiry, silently |
 | Segment/playlist gating | Nginx `auth_request` → `POST /api/playback/verify` |
 | Embed-domain whitelist | Backend authoritative check + client `document.referrer` |
-| Dynamic watermark (no IP shown) | Random string stored server-side, linked to IP |
+| Dynamic watermark (no IP shown) | Random string stored server-side, one per viewer network |
 | No fullscreen / inline playback | `player.html` intercepts Fullscreen API, `playsinline` |
 
 The viewer's **real IP never reaches the player**. The player only ever sees a
@@ -436,12 +436,33 @@ curl -sSIL https://your-domain | grep -iE 'HTTP/|^location'
 ```
 
 ### Viewer IP shows a Cloudflare address
-
 Behind Cloudflare the origin only sees Cloudflare's edge IP in the TCP source.
 The app reads the real client from **`CF-Connecting-IP`** (falling back to
 `X-Real-IP` / `X-Forwarded-For`), so the Viewer Log records the actual viewer.
 This trusts those headers, so keep the origin reachable only through Cloudflare
 (block direct access to the origin IP) — otherwise the header can be spoofed.
+
+### Same network, different IPs / different watermarks
+
+IPv6 hosts (phones, laptops) use **SLAAC privacy addresses**: each device gets a
+random interface identifier that also **rotates over time**. So devices on the
+same Wi‑Fi appear as different full addresses, and the same device changes
+address periodically.
+
+To keep tracking stable, the watermark is keyed on the **network**: the full
+address for IPv4, and the **/64 prefix** for IPv6 (e.g. `2001:fd8:ba41:c504::/64`).
+All devices behind one router therefore share a single watermark, and it does not
+change when the device rotates its address. The Viewer Log still shows the full
+address of the most recent connection for that network.
+
+### Embedded player returns 403 on a whitelisted domain
+
+The player sends every candidate embedding host (referrer + all ancestor
+origins). Some editors (e.g. w3schools TryIt) render your HTML in a nested
+`srcdoc` iframe, which makes `document.referrer` an opaque `about:` URL; the
+ancestor origin is still detected, so whitelisting the top-level domain (e.g.
+`w3schools.com`) works. Check the exact host shown in the player's "Playback
+blocked" overlay or in the `403` JSON (`embedHost`/`embedHosts`).
 
 ### Other checks
 

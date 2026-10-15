@@ -38,17 +38,19 @@ model WhitelistedDomain {
 }
 
 model ViewerSession {
-  id        String   @id @default(cuid())
-  watermark String   @unique
-  ipAddress String
-  userAgent String?
-  streamId  String
-  stream    Stream   @relation(fields: [streamId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  lastSeen  DateTime @default(now())
+  id         String   @id @default(cuid())
+  watermark  String   @unique
+  ipAddress  String
+  networkKey String?
+  userAgent  String?
+  streamId   String
+  stream     Stream   @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  lastSeen   DateTime @default(now())
 
   @@index([streamId])
   @@index([ipAddress])
+  @@index([networkKey])
   @@index([lastSeen])
 }
 
