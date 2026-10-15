@@ -19,7 +19,7 @@ IP-linked watermarks.
 ## Quick start
 
 ```bash
-git clone <your-repo-url> ari-rtmp
+git clone https://github.com/johndesu090/ari-rtmp.git ari-rtmp
 cd ari-rtmp
 sudo bash install.sh
 ```
@@ -150,6 +150,8 @@ downloads** across every healthy edge — a classic CDN tier on top of P2P.
 2. On the new server, clone the repo and run:
 
    ```bash
+   git clone https://github.com/johndesu090/ari-rtmp.git ari-rtmp
+   cd ari-rtmp
    sudo bash install-edge.sh
    ```
 
