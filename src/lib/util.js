@@ -85,6 +85,15 @@ export function isScraperUserAgent(ua) {
   return SCRAPER_UA_RE.test(String(ua || ''));
 }
 
+// Browsers we refuse to serve. Firefox is blocked because its
+// picture-in-picture cannot be disabled reliably. This UA test is spoofable,
+// so it is only the server-side half of the block; the player also refuses to
+// boot on a real Gecko engine, which a spoofed user-agent cannot hide.
+const BLOCKED_BROWSER_UA_RE = /(firefox|fxios)/i;
+export function isBlockedBrowser(ua) {
+  return BLOCKED_BROWSER_UA_RE.test(String(ua || ''));
+}
+
 // ── Network identity ───────────────────────────────────────────────────
 // IPv6 hosts use SLAAC privacy addresses: every device has a random interface
 // identifier that also rotates over time, so the full address is unstable.

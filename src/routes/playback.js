@@ -9,7 +9,7 @@ import {
   playbackCookieName,
   playbackCookieOptions,
 } from '../lib/tokens.js';
-import { clientIp, clientNetwork, normalizeHost, hostMatchesWhitelist, userAgentHash, isScraperUserAgent } from '../lib/util.js';
+import { clientIp, clientNetwork, normalizeHost, hostMatchesWhitelist, userAgentHash, isScraperUserAgent, isBlockedBrowser } from '../lib/util.js';
 import { getEdgePool } from '../lib/edges.js';
 import {
   cachePlaybackSession,
@@ -123,6 +123,9 @@ router.post('/authorize', async (req, res) => {
     if (isScraperUserAgent(req.headers['user-agent'])) {
       return res.status(403).json({ error: 'client_not_allowed' });
     }
+    if (isBlockedBrowser(req.headers['user-agent'])) {
+      return res.status(403).json({ error: 'browser_not_supported' });
+    }
 
     // One stable watermark per viewer network. Reuse the session for this
     // network key (or, for rows created before networkKey existed, the exact
@@ -210,6 +213,9 @@ router.post('/refresh', async (req, res) => {
   if (isScraperUserAgent(req.headers['user-agent'])) {
     return res.status(403).json({ error: 'client_not_allowed' });
   }
+  if (isBlockedBrowser(req.headers['user-agent'])) {
+    return res.status(403).json({ error: 'browser_not_supported' });
+  }
   if ((payload.ua && payload.ua !== reqUaHash) || (payload.ip && payload.ip !== reqNetwork)) {
     return res.status(403).json({ error: 'client_mismatch' });
   }
@@ -284,6 +290,9 @@ async function handleVerify(req, res) {
   // This is what stops a scraped token being replayed by ffmpeg/yt-dlp.
   if (isScraperUserAgent(req.headers['user-agent'])) {
     return res.status(403).send('client not allowed');
+  }
+  if (isBlockedBrowser(req.headers['user-agent'])) {
+    return res.status(403).send('browser not supported');
   }
   if (
     (payload.ua && payload.ua !== userAgentHash(req.headers['user-agent'])) ||

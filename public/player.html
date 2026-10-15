@@ -60,6 +60,30 @@
     #playButton.hidden { display: none; }
     #playButton svg { width: 110px; height: 110px; display: block; }
 
+    /* ── Custom controls ──
+       The native control bar is disabled so no engine (iOS Safari, Android
+       Chrome, desktop Chrome/Edge/Firefox) can offer a fullscreen or
+       picture-in-picture button. We ship our own minimal bar instead. */
+    #controls {
+      position: absolute; left: 0; right: 0; bottom: 0; z-index: 12;
+      display: flex; align-items: center; gap: 16px;
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+      background: linear-gradient(to top, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0));
+      opacity: 0; transition: opacity 0.2s ease; pointer-events: none;
+    }
+    #stage.controls-visible #controls { opacity: 1; pointer-events: auto; }
+    #controls button {
+      border: 0; background: none; padding: 2px; margin: 0; line-height: 0;
+      color: #fff; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    }
+    #controls button svg { width: 26px; height: 26px; display: block; }
+    #controls .live {
+      font: 700 11px/1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      letter-spacing: 0.14em; color: #fff; background: #dc2626;
+      padding: 4px 8px; border-radius: 3px;
+    }
+    #controls input[type="range"] { width: 96px; accent-color: #818cf8; }
+
     /* ── Overlay (loading / errors / domain block) ── */
     #overlay {
       position: absolute; inset: 0; z-index: 20;
@@ -92,7 +116,6 @@
       disablepictureinpicture
       disableremoteplayback
       controlslist="nodownload nofullscreen noremoteplayback"
-      controls
       preload="auto"
     ></video>
 
@@ -101,6 +124,13 @@
     <button id="playButton" aria-label="Play" title="Play">
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
     </button>
+
+    <div id="controls">
+      <button id="btnPlay" aria-label="Play or pause"></button>
+      <button id="btnMute" aria-label="Mute or unmute"></button>
+      <input id="vol" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume" />
+      <span class="live">LIVE</span>
+    </div>
 
     <div id="overlay">
       <div class="box">
@@ -158,6 +188,47 @@
       if (!video.ended) showPlayButton();
     });
 
+    // ── Custom controls ────────────────────────────────────────────────
+    const stage = document.getElementById('stage');
+    const btnPlay = document.getElementById('btnPlay');
+    const btnMute = document.getElementById('btnMute');
+    const vol = document.getElementById('vol');
+
+    const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+    const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>';
+    const ICON_VOL = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg>';
+    const ICON_MUTE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4zm15.5 1.1-1.4-1.4L16 10.8l-2.1-2.1-1.4 1.4L14.6 12l-2.1 2.1 1.4 1.4L16 13.2l2.1 2.1 1.4-1.4L17.4 12z"/></svg>';
+
+    function syncControls() {
+      const muted = video.muted || video.volume === 0;
+      btnPlay.innerHTML = video.paused ? ICON_PLAY : ICON_PAUSE;
+      btnMute.innerHTML = muted ? ICON_MUTE : ICON_VOL;
+      vol.value = muted ? '0' : String(video.volume);
+    }
+    function togglePlay() {
+      if (video.paused) video.play().catch(() => showPlayButton());
+      else video.pause();
+    }
+    btnPlay.addEventListener('click', togglePlay);
+    btnMute.addEventListener('click', () => { video.muted = !video.muted; syncControls(); });
+    vol.addEventListener('input', () => {
+      video.volume = Number(vol.value);
+      video.muted = video.volume === 0;
+      syncControls();
+    });
+    ['play', 'pause', 'volumechange', 'loadedmetadata'].forEach((evt) => video.addEventListener(evt, syncControls));
+    syncControls();
+
+    let hideControlsTimer = null;
+    function showControls() {
+      stage.classList.add('controls-visible');
+      clearTimeout(hideControlsTimer);
+      hideControlsTimer = setTimeout(() => stage.classList.remove('controls-visible'), 3200);
+    }
+    stage.addEventListener('mousemove', showControls);
+    stage.addEventListener('touchstart', showControls, { passive: true });
+    video.addEventListener('click', () => { showControls(); togglePlay(); });
+
     // ── Determine the embedding host(s) ────────────────────────────────
     // Collects the referrer and every ancestor origin so the backend can
     // enforce the whitelist. A nested `srcdoc` iframe (e.g. some online
@@ -192,30 +263,78 @@
       }, 12000);
     }
 
-    // ── No-fullscreen enforcement ──────────────────────────────────────
-    // Intercept every fullscreen entry point and immediately exit.
-    function killFullscreen(el) {
+    // ── Locked-down presentation ───────────────────────────────────────
+    // Fullscreen and picture-in-picture are blocked on every engine
+    // (iOS/Android Safari + Chrome, desktop Chrome/Edge/Firefox/Safari).
+    // Three layers: no native control bar (see markup), attribute opt-outs,
+    // and API interception below. Removing the native controls is what
+    // removes the iOS fullscreen and PiP buttons, which are not styleable.
+    function exitFullscreenNow() {
       try {
-        if (document.fullscreenElement || document.webkitFullscreenElement) {
-          (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
+        if (document.fullscreenElement || document.webkitFullscreenElement ||
+            document.mozFullScreenElement || document.msFullscreenElement) {
+          const fn = document.exitFullscreen || document.webkitExitFullscreen ||
+            document.mozCancelFullScreen || document.msExitFullscreen;
+          if (fn) fn.call(document);
         }
       } catch { /* ignore */ }
-      try { if (el?.webkitEnterFullscreen) el.webkitEnterFullscreen = () => {}; } catch { /* ignore */ }
-      try { if (video.webkitEnterFullscreen) video.webkitEnterFullscreen = () => {}; } catch { /* ignore */ }
     }
-    for (const proto of [Element.prototype, HTMLElement.prototype]) {
+    function exitPipNow() {
+      try {
+        if (document.pictureInPictureElement && document.exitPictureInPicture) {
+          document.exitPictureInPicture().catch(() => {});
+        }
+      } catch { /* ignore */ }
+      try { if (video.webkitSetPresentationMode) video.webkitSetPresentationMode('inline'); } catch { /* ignore */ }
+    }
+    function neutralize(el, prop, value) {
+      try { Object.defineProperty(el, prop, { value, writable: false, configurable: false }); } catch { /* ignore */ }
+    }
+
+    // Fullscreen: neutralize every entry point and force-exit if it still happens.
+    for (const proto of [Element.prototype, HTMLElement.prototype, HTMLVideoElement.prototype]) {
+      if (!proto) continue;
       for (const method of ['requestFullscreen', 'webkitRequestFullscreen', 'webkitRequestFullScreen', 'mozRequestFullScreen', 'msRequestFullscreen']) {
-        if (proto && proto[method]) {
-          proto[method] = function () { killFullscreen(this); return Promise.resolve(); };
+        if (typeof proto[method] === 'function') {
+          try {
+            proto[method] = function () { exitFullscreenNow(); return Promise.reject(new Error('fullscreen disabled')); };
+          } catch { /* ignore */ }
         }
       }
     }
     ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange']
-      .forEach(evt => document.addEventListener(evt, () => killFullscreen(video)));
-    // Some iOS versions expose this directly on the video element.
-    try {
-      Object.defineProperty(video, 'webkitEnterFullscreen', { value: () => {}, writable: false });
-    } catch { /* ignore */ }
+      .forEach((evt) => document.addEventListener(evt, exitFullscreenNow, true));
+
+    // Picture-in-picture: neutralize the request API and presentation mode,
+    // and force inline the moment any engine enters PiP.
+    neutralize(video, 'requestPictureInPicture', () => Promise.reject(new Error('picture-in-picture disabled')));
+    neutralize(video, 'webkitSetPresentationMode', () => {});
+    neutralize(video, 'webkitEnterFullscreen', () => {});
+    neutralize(video, 'webkitEnterFullScreen', () => {});
+    try { video.disablePictureInPicture = true; } catch { /* ignore */ }
+    ['enterpictureinpicture', 'webkitpresentationmodechanged'].forEach((evt) =>
+      video.addEventListener(evt, exitPipNow, true));
+    document.addEventListener('enterpictureinpicture', exitPipNow, true);
+    // Double-click / double-tap must not toggle fullscreen either.
+    video.addEventListener('dblclick', (e) => { e.preventDefault(); exitFullscreenNow(); }, true);
+
+    // ── Browser policy: Firefox is not supported ───────────────────────
+    // Firefox's picture-in-picture cannot be reliably disabled, so it is
+    // blocked. Detection uses Gecko engine features rather than the UA
+    // string, so spoofing the user-agent does not get around it. Firefox for
+    // iOS runs WebKit and is caught by the FxiOS token as a fallback.
+    function isFirefox() {
+      try { if (typeof InstallTrigger !== 'undefined') return true; } catch { /* ignore */ }
+      try { if ('mozInnerScreenX' in window) return true; } catch { /* ignore */ }
+      try { if (typeof navigator.buildID === 'string' && navigator.buildID) return true; } catch { /* ignore */ }
+      try { if (document.mozFullScreenEnabled !== undefined) return true; } catch { /* ignore */ }
+      try {
+        if (window.CSS && CSS.supports &&
+            (CSS.supports('-moz-appearance', 'none') || CSS.supports('-moz-user-select', 'none'))) return true;
+      } catch { /* ignore */ }
+      try { if (/firefox|fxios/i.test(navigator.userAgent || '')) return true; } catch { /* ignore */ }
+      return false;
+    }
 
     // ── API helpers ────────────────────────────────────────────────────
     async function postJson(path, body) {
@@ -448,6 +567,14 @@
 
     // ── Boot ───────────────────────────────────────────────────────────
     async function boot() {
+      // Firefox is blocked by engine detection (not UA), so a spoofed
+      // user-agent still fails here.
+      if (isFirefox()) {
+        showOverlay('Browser not supported',
+          'Firefox cannot be used for playback. Please use Chrome, Edge, Safari, or Brave.');
+        return;
+      }
+
       // Embed-only: refuse direct / top-level access so the player is only
       // usable from an approved site's iframe.
       if (window.self === window.top) {
