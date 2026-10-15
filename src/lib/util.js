@@ -70,6 +70,21 @@ export function timingSafeEqualStr(a, b) {
   return crypto.timingSafeEqual(ba, bb);
 }
 
+// ── Playback binding helpers ───────────────────────────────────────────
+// Short, stable fingerprint of a User-Agent. Tokens are bound to this so a
+// token scraped from a browser cannot be replayed by a different client.
+export function userAgentHash(ua) {
+  return crypto.createHash('sha256').update(String(ua || '')).digest('hex').slice(0, 16);
+}
+
+// Best-effort blocklist of non-browser clients used to rip HLS. Spoofable, so
+// it complements (never replaces) the IP/UA binding.
+const SCRAPER_UA_RE =
+  /(ffmpeg|ffprobe|libavformat|\blavf\b|yt-dlp|youtube-dl|streamlink|wget|curl|python-requests|python-urllib|go-http-client|aria2|httrack|libmpv|\bmpv\b)/i;
+export function isScraperUserAgent(ua) {
+  return SCRAPER_UA_RE.test(String(ua || ''));
+}
+
 // ── Network identity ───────────────────────────────────────────────────
 // IPv6 hosts use SLAAC privacy addresses: every device has a random interface
 // identifier that also rotates over time, so the full address is unstable.

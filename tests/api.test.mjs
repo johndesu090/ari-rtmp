@@ -262,6 +262,50 @@ test('verify gate accepts the token via the X-Play-Token header', async () => {
   assert.equal(res.status, 200);
 });
 
+test('verify gate rejects a token used with a different User-Agent', async () => {
+  const res = await fetch(`${BASE}/api/playback/verify`, {
+    method: 'GET',
+    headers: {
+      'X-Internal-Token': process.env.INTERNAL_API_TOKEN,
+      'X-Original-URI': `/hls/${streamKey}/0/seg_001.ts`,
+      'X-Play-Token': playToken,
+      'User-Agent': 'SomethingElse/1.0',
+    },
+  });
+  assert.equal(res.status, 403);
+});
+
+test('verify gate rejects known scraper User-Agents', async () => {
+  const res = await fetch(`${BASE}/api/playback/verify`, {
+    method: 'GET',
+    headers: {
+      'X-Internal-Token': process.env.INTERNAL_API_TOKEN,
+      'X-Original-URI': `/hls/${streamKey}/0/seg_001.ts`,
+      'X-Play-Token': playToken,
+      'User-Agent': 'Lavf/60.16.100',
+    },
+  });
+  assert.equal(res.status, 403);
+});
+
+test('refresh rejects a caller whose User-Agent does not match the token', async () => {
+  const { res, data } = await api('POST', '/api/playback/refresh', {
+    body: { token: playToken },
+    headers: { 'User-Agent': 'SomethingElse/1.0' },
+  });
+  assert.equal(res.status, 403);
+  assert.equal(data.error, 'client_mismatch');
+});
+
+test('authorize rejects scraper User-Agents', async () => {
+  const { res, data } = await api('POST', '/api/playback/authorize', {
+    body: { streamKey, embedHost: 'localhost' },
+    headers: { 'User-Agent': 'yt-dlp/2024.01.01' },
+  });
+  assert.equal(res.status, 403);
+  assert.equal(data.error, 'client_not_allowed');
+});
+
 test('viewer log records the watermark ↔ IP relationship', async () => {
   const { res, data } = await api('GET', '/api/viewers', { auth: true });
   assert.equal(res.status, 200);

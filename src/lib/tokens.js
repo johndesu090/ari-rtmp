@@ -7,14 +7,19 @@ import config from '../config.js';
 // `auth_request`. They carry a session id, the stream key and the watermark
 // token — never the viewer's IP address.
 
-export function issuePlaybackToken({ sessionId, streamKey, watermark }) {
+export function issuePlaybackToken({ sessionId, streamKey, watermark, network, userAgentHash }) {
+  const payload = {
+    typ: 'play',
+    sid: sessionId,
+    sk: streamKey,
+    wm: watermark,
+  };
+  // Bind the token to the client so it cannot be replayed elsewhere.
+  if (network) payload.ip = network;
+  if (userAgentHash) payload.ua = userAgentHash;
+
   return jwt.sign(
-    {
-      typ: 'play',
-      sid: sessionId,
-      sk: streamKey,
-      wm: watermark,
-    },
+    payload,
     config.jwtSecret,
     {
       expiresIn: config.tokenTtlSeconds,

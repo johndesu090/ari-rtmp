@@ -136,6 +136,7 @@ Data lives in named volumes: `db_data`, `redis_data`, `hls`, `letsencrypt`.
 | Short-lived playback token | JWT, `TOKEN_TTL_SECONDS` (default 60s) |
 | Token auto-refresh | `player.html` refreshes ~before expiry, silently |
 | Segment/playlist gating | Nginx `auth_request` → `POST /api/playback/verify` |
+| Token bound to the client | `verify`/`refresh` reject a token whose bound IP network or User-Agent doesn't match the caller, and block known ripper UAs (ffmpeg/yt-dlp/…) |
 | Embed-domain whitelist | Backend authoritative check + client `document.referrer` |
 | Dynamic watermark (no IP shown) | Random string stored server-side, one per viewer network |
 | No fullscreen / inline playback | `player.html` intercepts Fullscreen API, `playsinline` |

@@ -9,7 +9,7 @@ import {
   playbackCookieName,
   playbackCookieOptions,
 } from '../lib/tokens.js';
-import { clientIp, clientNetwork, normalizeHost, hostMatchesWhitelist } from '../lib/util.js';
+import { clientIp, clientNetwork, normalizeHost, hostMatchesWhitelist, userAgentHash, isScraperUserAgent } from '../lib/util.js';
 import { getEdgePool } from '../lib/edges.js';
 import {
   cachePlaybackSession,
@@ -120,6 +120,10 @@ router.post('/authorize', async (req, res) => {
     const networkKey = clientNetwork(ip);
     const userAgent = String(req.headers['user-agent'] || '').slice(0, 512);
 
+    if (isScraperUserAgent(req.headers['user-agent'])) {
+      return res.status(403).json({ error: 'client_not_allowed' });
+    }
+
     // One stable watermark per viewer network. Reuse the session for this
     // network key (or, for rows created before networkKey existed, the exact
     // IP); otherwise create a new session with a fresh watermark.
@@ -151,6 +155,8 @@ router.post('/authorize', async (req, res) => {
       sessionId: session.id,
       streamKey,
       watermark,
+      network: networkKey,
+      userAgentHash: userAgentHash(req.headers['user-agent']),
     });
 
     await cachePlaybackSession(
@@ -197,6 +203,17 @@ router.post('/refresh', async (req, res) => {
     return res.status(401).json({ error: 'token_too_old' });
   }
 
+  // The refresh caller must be the same client the token was issued to —
+  // otherwise a stolen token could be re-bound to an attacker's UA/IP.
+  const reqNetwork = clientNetwork(clientIp(req));
+  const reqUaHash = userAgentHash(req.headers['user-agent']);
+  if (isScraperUserAgent(req.headers['user-agent'])) {
+    return res.status(403).json({ error: 'client_not_allowed' });
+  }
+  if ((payload.ua && payload.ua !== reqUaHash) || (payload.ip && payload.ip !== reqNetwork)) {
+    return res.status(403).json({ error: 'client_mismatch' });
+  }
+
   try {
     // Confirm the session still exists and the stream is still active.
     const session = await prisma.viewerSession.findUnique({
@@ -221,6 +238,8 @@ router.post('/refresh', async (req, res) => {
       sessionId: session.id,
       streamKey: payload.sk,
       watermark: session.watermark,
+      network: payload.ip || reqNetwork,
+      userAgentHash: payload.ua || reqUaHash,
     });
 
     res.cookie(playbackCookieName, newToken, playbackCookieOptions());
@@ -259,6 +278,18 @@ async function handleVerify(req, res) {
     payload = verifyPlaybackToken(token);
   } catch {
     return res.status(403).send('invalid token');
+  }
+
+  // The token is bound to the client that requested it (IP network + UA).
+  // This is what stops a scraped token being replayed by ffmpeg/yt-dlp.
+  if (isScraperUserAgent(req.headers['user-agent'])) {
+    return res.status(403).send('client not allowed');
+  }
+  if (
+    (payload.ua && payload.ua !== userAgentHash(req.headers['user-agent'])) ||
+    (payload.ip && payload.ip !== clientNetwork(clientIp(req)))
+  ) {
+    return res.status(403).send('client mismatch');
   }
 
   const originalUri = String(req.headers['x-original-uri'] || '');

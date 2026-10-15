@@ -93,6 +93,9 @@ http {
             proxy_set_header Cookie $http_cookie;
             proxy_set_header X-Internal-Token __INTERNAL_TOKEN__;
             proxy_set_header X-Play-Token $ari_play_token;
+            proxy_set_header CF-Connecting-IP $http_cf_connecting_ip;
+            proxy_set_header True-Client-IP $http_true_client_ip;
+            proxy_set_header User-Agent $http_user_agent;
         }
 
         # ── P2P signaling (WebSocket) ──────────────────────────────────
