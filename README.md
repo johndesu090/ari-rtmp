@@ -1,5 +1,8 @@
 # Ari RTMP
 
+[![CI](https://github.com/johndesu090/ari-rtmp/actions/workflows/ci.yml/badge.svg)](https://github.com/johndesu090/ari-rtmp/actions/workflows/ci.yml)
+[![Installers (OS compatibility)](https://github.com/johndesu090/ari-rtmp/actions/workflows/installers.yml/badge.svg)](https://github.com/johndesu090/ari-rtmp/actions/workflows/installers.yml)
+
 A self-hosted, low-latency **HLS live-streaming platform** with Adaptive Bitrate
 (ABR), strict stream-key enforcement, short-lived playback tokens that
 **auto-refresh mid-stream**, embed-domain whitelisting, and dynamic
@@ -245,6 +248,8 @@ ari-rtmp/
 ├── docker-compose.yml         # origin stack (db, redis, app, nginx, certbot)
 ├── docker-compose.edge.yml    # edge relay stack
 ├── docker/                    # Dockerfiles, entrypoints, deploy.sh, deploy-edge.sh
+├── .github/workflows/         # ci.yml + installers.yml (OS compatibility)
+├── tests/api.test.mjs         # API integration suite (npm test)
 ├── package.json
 ├── .env.example
 ├── prisma/schema.prisma       # Admin, Stream, WhitelistedDomain, ViewerSession, P2PSnapshot, EdgeServer, Setting
@@ -401,6 +406,54 @@ All runtime configuration lives in `.env` (see `.env.example`):
 | `POST` | `/api/edges/register` | token | Edge self-registration |
 | `POST` | `/api/edges/heartbeat` | edge secret | Edge health/load reporting |
 | `POST` | `/api/playback/verify-edge` | playback token | Token gate used by edges |
+
+---
+
+## Testing & CI
+
+### Running the tests locally
+
+The API integration suite needs a live PostgreSQL and Redis:
+
+```bash
+npm install
+npx prisma db push --force-reset          # fresh schema
+
+DATABASE_URL="postgresql://ari_rtmp:ari_rtmp@127.0.0.1:5432/ari_rtmp?schema=public" \
+REDIS_URL="redis://127.0.0.1:6379" \
+JWT_SECRET=test SESSION_SECRET=test INTERNAL_API_TOKEN=test-token \
+npm test
+```
+
+`npm test` (Node's built-in runner) boots the real app and exercises setup,
+auth, streams, RTMP ingest validation, playback tokens + auto-refresh, the
+`auth_request` verify gate, domain whitelisting, watermark/viewer logging, P2P
+config and edge registration/heartbeat/pool. `npm run check` runs the static
+consistency checks.
+
+### Continuous integration
+
+Two GitHub Actions workflows run on every push to `main` and on pull requests:
+
+**`.github/workflows/ci.yml`**
+
+| Job | What it does |
+|---|---|
+| `static-checks` | ShellCheck on all shell scripts, `node --check` on JS, inline-HTML-JS parse, JSON/template validation, Compose YAML validation |
+| `test` | Full API suite against **PostgreSQL + Redis service containers**, across a matrix of **Ubuntu 22.04 / 24.04 × Node 20 / 22** |
+| `docker-build` | Builds the `app`, `nginx` and `edge` Docker images (with build cache) |
+| `docker-smoke` | Brings up the whole origin stack with `docker compose`, waits for `/api/health`, creates the admin via the API and checks RTMP is listening |
+
+**`.github/workflows/installers.yml`** — OS compatibility
+
+| Job | What it does |
+|---|---|
+| `origin` | Runs the real `install.sh` non-interactively on **Ubuntu 22.04 and 24.04**, then verifies Postgres/Redis/Nginx/app services, `nginx -t`, the setup API, the database schema, RTMP `:1935`, and that HLS is token-gated (403 without a token) |
+| `edge` | Runs `install-edge.sh` on **Ubuntu 22.04 and 24.04** and verifies Nginx, the health endpoint and the heartbeat timer |
+
+The installer jobs are the OS-compatibility gate for the supported target
+(Ubuntu 24.04 LTS, with 22.04 also validated). Both support `ARI_SKIP_UPGRADE=1`
+and `ARI_SKIP_FIREWALL=1` for fast, non-interactive runs.
 
 ---
 

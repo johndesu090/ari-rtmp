@@ -207,11 +207,15 @@ systemctl enable --now ari-edge-heartbeat.timer
 "${EDGE_DIR}/edge-heartbeat.sh" || warn "First heartbeat failed (will retry on the timer)."
 
 # ── Firewall ───────────────────────────────────────────────────────────────
-log "Configuring UFW"
-ufw allow 22/tcp  >/dev/null 2>&1 || true
-ufw allow 80/tcp  >/dev/null 2>&1 || true
-ufw allow 443/tcp >/dev/null 2>&1 || true
-ufw --force enable >/dev/null 2>&1 || warn "UFW could not be enabled (skipping)."
+if [[ "${ARI_SKIP_FIREWALL:-0}" != "1" ]]; then
+  log "Configuring UFW"
+  ufw allow 22/tcp  >/dev/null 2>&1 || true
+  ufw allow 80/tcp  >/dev/null 2>&1 || true
+  ufw allow 443/tcp >/dev/null 2>&1 || true
+  ufw --force enable >/dev/null 2>&1 || warn "UFW could not be enabled (skipping)."
+else
+  info "Skipping firewall configuration (ARI_SKIP_FIREWALL=1)."
+fi
 
 # ── Verify ─────────────────────────────────────────────────────────────────
 log "Verifying"

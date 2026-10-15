@@ -141,7 +141,10 @@ INTERNAL_TOKEN="$(openssl rand -hex 24)"
 log "Updating apt and installing base packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get upgrade -y
+# ARI_SKIP_UPGRADE=1 skips the full dist-upgrade (useful for CI / fast installs).
+if [[ "${ARI_SKIP_UPGRADE:-0}" != "1" ]]; then
+  apt-get upgrade -y
+fi
 apt-get install -y \
   build-essential libpcre3-dev libssl-dev zlib1g-dev libgd-dev \
   git curl wget ca-certificates gnupg lsb-release rsync \
@@ -289,13 +292,17 @@ systemctl restart ari-rtmp.service
 info "Services started."
 
 # ── Step 10: firewall ──────────────────────────────────────────────────────
-log "Configuring UFW firewall"
-ufw allow 22/tcp   >/dev/null 2>&1 || true
-ufw allow 80/tcp   >/dev/null 2>&1 || true
-ufw allow 443/tcp  >/dev/null 2>&1 || true
-ufw allow 1935/tcp >/dev/null 2>&1 || true
-ufw allow 1936/tcp >/dev/null 2>&1 || true
-ufw --force enable >/dev/null 2>&1 || warn "UFW could not be enabled (skipping)."
+if [[ "${ARI_SKIP_FIREWALL:-0}" != "1" ]]; then
+  log "Configuring UFW firewall"
+  ufw allow 22/tcp   >/dev/null 2>&1 || true
+  ufw allow 80/tcp   >/dev/null 2>&1 || true
+  ufw allow 443/tcp  >/dev/null 2>&1 || true
+  ufw allow 1935/tcp >/dev/null 2>&1 || true
+  ufw allow 1936/tcp >/dev/null 2>&1 || true
+  ufw --force enable >/dev/null 2>&1 || warn "UFW could not be enabled (skipping)."
+else
+  info "Skipping firewall configuration (ARI_SKIP_FIREWALL=1)."
+fi
 
 # ── Step 11: SSL via Certbot (optional) ────────────────────────────────────
 if [[ "${USE_SSL}" == "yes" ]]; then

@@ -1,0 +1,184 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Fast static checks ─────────────────────────────────────────────────
+  static-checks:
+    name: Static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: ShellCheck (all shell scripts)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y shellcheck
+          shellcheck -S warning \
+            install.sh install-edge.sh \
+            bin/hls-transcode.sh \
+            scripts/*.sh \
+            docker/*.sh docker/app/*.sh docker/nginx/*.sh docker/edge/*.sh
+
+      - name: JavaScript syntax
+        run: |
+          set -e
+          for f in $(find src -name '*.js') public/p2p-engine.js tests/*.mjs scripts/*.mjs; do
+            node --check "$f"
+            echo "OK $f"
+          done
+
+      - name: Static consistency (JSON, inline HTML JS, templates)
+        run: npm run check
+
+      - name: Compose files are valid YAML
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          import yaml
+          for f in ['docker-compose.yml', 'docker-compose.edge.yml']:
+              yaml.safe_load(open(f))
+              print(f'OK {f}')
+          PY
+
+  # ── Unit / integration tests across OS + Node versions ─────────────────
+  test:
+    name: Tests (Node ${{ matrix.node }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        node: [20, 22]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ari_rtmp
+          POSTGRES_PASSWORD: ari_rtmp
+          POSTGRES_DB: ari_rtmp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ari_rtmp"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgresql://ari_rtmp:ari_rtmp@127.0.0.1:5432/ari_rtmp?schema=public
+      REDIS_URL: redis://127.0.0.1:6379
+      JWT_SECRET: ci-jwt-secret
+      SESSION_SECRET: ci-session-secret
+      INTERNAL_API_TOKEN: ci-internal-token
+      P2P_ENABLED: "true"
+      PORT: "3100"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma db push --force-reset --skip-generate
+      - run: npm test
+
+  # ── Docker images build ────────────────────────────────────────────────
+  docker-build:
+    name: Docker build (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: app
+            dockerfile: docker/app/Dockerfile
+          - image: edge
+            dockerfile: docker/edge/Dockerfile
+          - image: nginx
+            dockerfile: docker/nginx/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.image }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          tags: ari-rtmp-${{ matrix.image }}:ci
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  # ── Full origin stack smoke test via Docker Compose ────────────────────
+  docker-smoke:
+    name: Docker Compose smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write .env
+        run: |
+          cat > .env <<EOF
+          PUBLIC_BASE_URL=http://127.0.0.1
+          SERVER_NAME=_
+          DOMAIN=
+          DB_USER=ari_rtmp
+          DB_NAME=ari_rtmp
+          DB_PASSWORD=$(openssl rand -hex 16)
+          JWT_SECRET=$(openssl rand -hex 32)
+          SESSION_SECRET=$(openssl rand -hex 32)
+          INTERNAL_API_TOKEN=$(openssl rand -hex 24)
+          P2P_ENABLED=true
+          EOF
+
+      - name: Build and start the stack
+        run: docker compose up -d --build
+
+      - name: Wait for the API and verify services
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1/api/health >/dev/null 2>&1; then
+              echo "API is healthy"; break
+            fi
+            sleep 3
+          done
+          echo "--- /api/health ---"; curl -fsS http://127.0.0.1/api/health
+          echo; echo "--- /api/setup/status ---"; curl -fsS http://127.0.0.1/api/setup/status
+          echo; echo "--- compose ps ---"; docker compose ps
+          echo "--- nginx logs (tail) ---"; docker compose logs --tail=20 nginx
+
+      - name: Create admin through the API
+        run: |
+          curl -fsS -X POST http://127.0.0.1/api/setup \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"ciadmin","password":"supersecret123"}'
+
+      - name: Verify RTMP port is listening
+        run: |
+          docker compose exec -T nginx sh -c "ss -lnt 2>/dev/null | grep -E ':1935|:80' || netstat -lnt 2>/dev/null | grep -E ':1935|:80'"
+
+      - name: Tear down
+        if: always()
+        run: docker compose logs --tail=100 || true

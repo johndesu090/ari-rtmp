@@ -1,0 +1,122 @@
+name: Installers (OS compatibility)
+
+# Runs the real, interactive installers on the supported Ubuntu releases and
+# verifies that every service comes up. This is the OS-compatibility gate.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'install.sh'
+      - 'install-edge.sh'
+      - 'nginx/**'
+      - 'systemd/**'
+      - 'scripts/**'
+      - 'src/**'
+      - 'prisma/**'
+      - 'package.json'
+      - '.github/workflows/installers.yml'
+  pull_request:
+    paths:
+      - 'install.sh'
+      - 'install-edge.sh'
+      - 'nginx/**'
+      - 'systemd/**'
+      - '.github/workflows/installers.yml'
+
+concurrency:
+  group: installers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Origin installer: Ubuntu 22.04 + 24.04 ─────────────────────────────
+  origin:
+    name: install.sh (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run install.sh (HTTP / IP mode, non-interactive)
+        run: |
+          printf 'n\n\ny\n' | sudo env \
+            ARI_SKIP_UPGRADE=1 \
+            ARI_SKIP_FIREWALL=1 \
+            bash install.sh
+
+      - name: Verify system services are active
+        run: |
+          set -e
+          for svc in postgresql redis-server nginx ari-rtmp; do
+            if sudo systemctl is-active --quiet "$svc"; then
+              echo "✓ $svc active"
+            else
+              echo "✗ $svc inactive"; sudo systemctl status "$svc" --no-pager || true; exit 1
+            fi
+          done
+
+      - name: Verify Nginx config (RTMP + HLS)
+        run: sudo /usr/local/nginx/sbin/nginx -t
+
+      - name: Verify API and setup wizard
+        run: |
+          set -e
+          curl -fsS http://127.0.0.1/api/health
+          echo
+          curl -fsS http://127.0.0.1/api/setup/status
+          echo
+
+      - name: Verify database schema was created
+        run: |
+          sudo -u postgres psql -d ari_rtmp -tAc 'SELECT count(*) FROM "Admin"'
+          sudo -u postgres psql -d ari_rtmp -tAc 'SELECT tablename FROM pg_tables WHERE schemaname = '"'"'public'"'"' ORDER BY tablename'
+
+      - name: Verify RTMP port is listening and HLS is token-gated
+        run: |
+          set -e
+          (ss -lnt | grep -q ':1935' && echo "✓ RTMP 1935 listening") || { echo "✗ 1935 not listening"; ss -lnt; exit 1; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/hls/does-not-exist/index.m3u8)
+          echo "HLS without token -> HTTP $code (expected 403)"
+          [ "$code" = "403" ] || exit 1
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          sudo journalctl -u ari-rtmp -n 100 --no-pager || true
+          sudo tail -n 100 /var/log/nginx/error.log || true
+
+  # ── Edge installer: Ubuntu 22.04 + 24.04 ───────────────────────────────
+  edge:
+    name: install-edge.sh (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run install-edge.sh (non-interactive)
+        run: |
+          # origin URL, edge URL, name(blank), region(blank), token, SSL=n, proceed=y
+          printf 'http://127.0.0.1:9\nhttp://127.0.0.1\n\n\ndummy-token\nn\ny\n' | \
+            sudo env ARI_SKIP_FIREWALL=1 bash install-edge.sh
+
+      - name: Verify edge services
+        run: |
+          set -e
+          sudo systemctl is-active --quiet nginx && echo "✓ nginx active"
+          sudo systemctl is-active --quiet ari-edge-heartbeat.timer && echo "✓ heartbeat timer active"
+          sudo nginx -t
+          curl -fsS http://127.0.0.1/edge/health && echo
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          sudo nginx -T 2>&1 | head -80 || true
+          sudo journalctl -u ari-edge-heartbeat.service -n 50 --no-pager || true

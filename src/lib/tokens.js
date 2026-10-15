@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import crypto from 'node:crypto';
 import config from '../config.js';
 
 // ── Playback tokens ────────────────────────────────────────────────────
@@ -18,6 +19,7 @@ export function issuePlaybackToken({ sessionId, streamKey, watermark }) {
     {
       expiresIn: config.tokenTtlSeconds,
       issuer: 'ari-rtmp',
+      jwtid: crypto.randomBytes(8).toString('hex'),
     },
   );
 }
@@ -60,6 +62,7 @@ export function issueAdminToken({ adminId, username }) {
     {
       expiresIn: `${config.adminSessionHours}h`,
       issuer: 'ari-rtmp',
+      jwtid: crypto.randomBytes(8).toString('hex'),
     },
   );
 }
