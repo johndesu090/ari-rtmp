@@ -348,12 +348,11 @@
         const BaseLoader = window.Hls.DefaultConfig.loader;
         class TokenLoader extends BaseLoader {
           load(context, config, callbacks) {
-            const urlWithToken = tokenized(context.url);
-
             // Media segments: P2P first, then load-balanced origin/edges.
             // Only intercept when there is actually something to gain.
             const useP2POrEdges = (p2p && p2p.enabled) || segmentOrigins.length > 1;
             if (context.type === 'fragment' && useP2POrEdges) {
+              const urlWithToken = tokenized(context.url);
               let segKey = null;
               try {
                 segKey = new URL(urlWithToken, window.location.href).pathname;
@@ -369,13 +368,13 @@
                   );
                 })
                 .catch(() => {
-                  context.url = urlWithToken;
                   super.load(context, config, callbacks);
                 });
               return;
             }
 
-            context.url = urlWithToken;
+            // Playlists and keys: leave context.url intact (the key loader
+            // matches on it); xhrSetup appends the token to the request.
             super.load(context, config, callbacks);
           }
         }
@@ -386,6 +385,13 @@
           backBufferLength: 30,
           maxBufferLength: 6,
           liveSyncDurationCount: 2,
+          // hls.js resolves a key request back to its cached entry by
+          // context.url, so the loader must never rewrite context.url. Carry
+          // the token by re-opening the XHR here instead: xhrSetup runs before
+          // hls.js's own open, which then skips it because readyState is set.
+          xhrSetup: (xhr, url) => {
+            xhr.open('GET', tokenized(url), true);
+          },
           loader: TokenLoader,
         });
 
