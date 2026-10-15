@@ -74,6 +74,7 @@ docker compose up -d --build
 ### Edge / sub-server
 
 ```bash
+git clone https://github.com/johndesu090/ari-rtmp.git ari-rtmp && cd ari-rtmp
 ./docker/deploy-edge.sh
 ```
 
@@ -142,7 +143,7 @@ shows the mapping between watermark ↔ IP.
 
 ---
 
-## Peer-to-peer acceleration (SwarmCloud-style)
+## Peer-to-peer acceleration (P2P-CDN)
 
 Ari RTMP includes a built-in **P2P-CDN**: viewers watching the same stream form
 a WebRTC swarm and exchange HLS media segments directly, so the origin server
