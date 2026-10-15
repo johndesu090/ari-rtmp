@@ -409,6 +409,43 @@ All runtime configuration lives in `.env` (see `.env.example`):
 
 ---
 
+## Troubleshooting
+
+### `ERR_TOO_MANY_REDIRECTS` behind Cloudflare / a proxy
+
+If the site is proxied (e.g. **Cloudflare with SSL/TLS mode set to "Flexible"**),
+the browser↔edge leg is HTTPS but the edge→origin leg is HTTP. The origin's
+"redirect HTTP to HTTPS" rule then bounces the proxy back to HTTP, forever.
+
+Two ways to fix it:
+
+1. **Recommended:** set Cloudflare **SSL/TLS → Overview → encryption mode** to
+   **Full (strict)** (the origin already has a valid Let's Encrypt certificate).
+   The edge then talks to the origin over HTTPS and the loop disappears.
+2. **Origin-side (already built in):** the shipped Nginx config only redirects to
+   HTTPS when the request was *not* already HTTPS at a front proxy. It trusts
+   `X-Forwarded-Proto` and Cloudflare's `CF-Visitor` header, so it works even in
+   Flexible mode. If you upgraded from an older version, re-render the config by
+   re-running `install.sh` (or `./docker/deploy.sh`).
+
+Diagnose the redirect chain with:
+
+```bash
+curl -sSIL http://your-domain | grep -iE 'HTTP/|^location'
+curl -sSIL https://your-domain | grep -iE 'HTTP/|^location'
+```
+
+### Other checks
+
+```bash
+sudo /usr/local/nginx/sbin/nginx -t          # bare-metal config test
+sudo /usr/local/nginx/sbin/nginx -T          # dump the running config
+sudo ss -lntp | grep -E ':80|:443|:1935'     # who owns the ports
+docker compose logs --tail=50 nginx app      # Docker deployments
+```
+
+---
+
 ## Testing & CI
 
 ### Running the tests locally

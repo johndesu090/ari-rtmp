@@ -37,6 +37,31 @@ http {
         ''      close;
     }
 
+    # ── Proxy-aware HTTPS redirect ─────────────────────────────────────
+    # A front proxy (e.g. Cloudflare in "Flexible" mode) may terminate TLS
+    # and forward to us over plain HTTP while the client actually used HTTPS.
+    # In that case we must NOT redirect to HTTPS or the proxy loops forever.
+    # We trust X-Forwarded-Proto and Cloudflare's CF-Visitor to tell us.
+    map $http_x_forwarded_proto $ari_proto {
+        default $http_x_forwarded_proto;
+        ""      $scheme;
+    }
+    map "$ari_proto|$http_cf_visitor" $ari_client_https {
+        default 0;
+        "~*https" 1;
+    }
+    # ACME HTTP-01 challenges must never be redirected.
+    map $request_uri $ari_is_acme {
+        default 0;
+        "~^/\.well-known/acme-challenge/" 1;
+    }
+    # Redirect only when: plain HTTP AND client was not already on HTTPS AND
+    # this is not an ACME challenge.
+    map "$scheme|$ari_client_https|$ari_is_acme" $ari_force_https_redirect {
+        default 0;
+        "http|0|0" 1;
+    }
+
     # Shared SSL settings.
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
@@ -48,23 +73,10 @@ http {
     gzip on;
     gzip_types text/plain text/css application/json application/javascript application/vnd.apple.mpegurl;
 
-    # ── HTTP → HTTPS + ACME ────────────────────────────────────────────
+    # ── HTTP + HTTPS ───────────────────────────────────────────────────
     server {
         listen 80;
         listen [::]:80;
-        server_name __SERVER_NAME__;
-
-        location /.well-known/acme-challenge/ {
-            root /var/www/certbot;
-        }
-
-        location / {
-            return 301 https://$host$request_uri;
-        }
-    }
-
-    # ── HTTPS ──────────────────────────────────────────────────────────
-    server {
         listen 443 ssl;
         listen [::]:443 ssl;
         http2 on;
@@ -72,6 +84,16 @@ http {
 
         ssl_certificate     __SSL_CERT__;
         ssl_certificate_key __SSL_KEY__;
+
+        # Plain HTTP (not behind a TLS-terminating proxy) → redirect to HTTPS.
+        if ($ari_force_https_redirect = 1) {
+            return 301 https://$host$request_uri;
+        }
+
+        # ACME HTTP-01 challenge webroot (used by Certbot renewal).
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+        }
 
         # ── HLS delivery (token-gated) ─────────────────────────────────
         location /hls/ {
@@ -97,6 +119,7 @@ http {
             }
         }
 
+        # Internal auth subrequest → backend token verification.
         location = /_hls_auth {
             internal;
             proxy_pass http://__APP_UPSTREAM__/api/playback/verify$is_args$args;
@@ -117,7 +140,7 @@ http {
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto $ari_proto;
             proxy_read_timeout 3600s;
             proxy_send_timeout 3600s;
             proxy_buffering off;
@@ -129,7 +152,7 @@ http {
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto $ari_proto;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection $connection_upgrade;
             proxy_read_timeout 3600s;

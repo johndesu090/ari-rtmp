@@ -136,6 +136,25 @@ jobs:
           sudo nginx -t
           curl -fsS http://127.0.0.1/edge/health && echo
 
+      - name: Validate edge SSL configuration
+        run: |
+          set -e
+          D=edge.test.local
+          sudo mkdir -p "/etc/letsencrypt/live/$D"
+          sudo openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout "/etc/letsencrypt/live/$D/privkey.pem" \
+            -out "/etc/letsencrypt/live/$D/fullchain.pem" \
+            -subj "/CN=$D" >/dev/null 2>&1
+          sudo sed \
+            -e "s|__EDGE_SERVER_NAME__|$D|g" \
+            -e "s|__ORIGIN_URL__|https://origin.test|g" \
+            -e "s|__ORIGIN_HOST__|origin.test|g" \
+            -e "s|__SSL_CERT__|/etc/letsencrypt/live/$D/fullchain.pem|g" \
+            -e "s|__SSL_KEY__|/etc/letsencrypt/live/$D/privkey.pem|g" \
+            nginx/edge-ssl.conf.template | sudo tee /etc/nginx/sites-available/ari-edge >/dev/null
+          sudo nginx -t
+          echo "✓ edge SSL config valid"
+
       - name: Collect diagnostics on failure
         if: failure()
         run: |
