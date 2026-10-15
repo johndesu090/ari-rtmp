@@ -85,6 +85,17 @@ for (const rel of ['install.sh', 'docker/nginx/Dockerfile']) {
   else ok(`${rel}: Nginx configure flags include required modules`);
 }
 
+// 5) The HLS transcoder must encrypt segments (AES-128), with the key served
+//    through the token gate at /hls/<name>/enc.key.
+{
+  const transcode = readFileSync(join(root, 'bin/hls-transcode.sh'), 'utf8');
+  const missing = ['-hls_key_info_file', 'enc.key', '/hls/${NAME}/enc.key'].filter(
+    (needle) => !transcode.includes(needle),
+  );
+  if (missing.length) fail(`bin/hls-transcode.sh: missing ${missing.join(', ')}`);
+  else ok('bin/hls-transcode.sh: AES-128 segment encryption present');
+}
+
 if (failures > 0) {
   console.error(`\nStatic checks failed: ${failures} problem(s).`);
   process.exit(1);

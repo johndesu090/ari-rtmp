@@ -49,7 +49,7 @@ const config = {
   databaseUrl: required('DATABASE_URL'),
   redisUrl: process.env.REDIS_URL || 'redis://127.0.0.1:6379',
 
-  tokenTtlSeconds: parseInt(process.env.TOKEN_TTL_SECONDS || '60', 10),
+  tokenTtlSeconds: parseInt(process.env.TOKEN_TTL_SECONDS || '30', 10),
   adminSessionHours: parseInt(process.env.ADMIN_SESSION_HOURS || '24', 10),
 
   hlsRoot: process.env.HLS_ROOT || '/var/www/hls',

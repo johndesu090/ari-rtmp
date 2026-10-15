@@ -38,6 +38,14 @@ fi
 rm -rf "$OUT"
 mkdir -p "$OUT/0" "$OUT/1" "$OUT/2"
 
+# AES-128: one random key per stream, written next to the segments so it is
+# served only through the token gate at /hls/<name>/enc.key. Unauthorized
+# clients can fetch the playlist but cannot decrypt the segments.
+KEY_FILE="${OUT}/enc.key"
+KEYINFO="/tmp/ari-keyinfo-${NAME}"
+head -c 16 /dev/urandom > "$KEY_FILE"
+printf '%s\n%s\n' "/hls/${NAME}/enc.key" "$KEY_FILE" > "$KEYINFO"
+
 SEG_TIME=2
 LIST_SIZE=5
 GOP=48            # ~2s at 24fps source; adjust if your source differs
@@ -109,6 +117,7 @@ exec ffmpeg -hide_banner -loglevel warning -nostdin \
     -hls_time "$SEG_TIME" \
     -hls_list_size "$LIST_SIZE" \
     -strftime 1 \
+    -hls_key_info_file "$KEYINFO" \
     -hls_flags delete_segments+independent_segments+second_level_segment_index \
     -hls_segment_type mpegts \
     -hls_segment_filename "${OUT}/%v/seg_%Y%m%d-%H%M%S-%%03d.ts" \
