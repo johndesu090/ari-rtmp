@@ -147,8 +147,8 @@ jobs:
             -subj "/CN=$D" >/dev/null 2>&1
           sudo sed \
             -e "s|__EDGE_SERVER_NAME__|$D|g" \
-            -e "s|__ORIGIN_URL__|https://origin.test|g" \
-            -e "s|__ORIGIN_HOST__|origin.test|g" \
+            -e "s|__ORIGIN_URL__|https://127.0.0.1|g" \
+            -e "s|__ORIGIN_HOST__|127.0.0.1|g" \
             -e "s|__SSL_CERT__|/etc/letsencrypt/live/$D/fullchain.pem|g" \
             -e "s|__SSL_KEY__|/etc/letsencrypt/live/$D/privkey.pem|g" \
             nginx/edge-ssl.conf.template | sudo tee /etc/nginx/sites-available/ari-edge >/dev/null
