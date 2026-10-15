@@ -424,7 +424,8 @@
       // 1) Advisory client-side domain check.
       const check = await postJson('/api/playback/check-domain', { host: embedHost });
       if (check.ok && check.data && check.data.allowed === false) {
-        showOverlay('Playback blocked', `This domain (${embedHost}) is not authorized to embed this stream.`);
+        showOverlay('Playback blocked',
+          `This domain (${embedHost}) is not whitelisted. Add "${embedHost}" under Whitelist in the dashboard.`);
         return;
       }
 
@@ -433,12 +434,15 @@
       const auth = await postJson('/api/playback/authorize', { streamKey: STREAM_KEY, embedHost });
       if (!auth.ok) {
         const err = auth.data && auth.data.error;
+        console.warn('[player] authorize failed', err, auth.data);
         if (err === 'domain_not_whitelisted') {
-          showOverlay('Playback blocked', `This domain (${embedHost}) is not authorized to embed this stream.`);
+          const blocked = (auth.data && auth.data.embedHost) || embedHost;
+          showOverlay('Playback blocked',
+            `This domain (${blocked}) is not whitelisted. Add "${blocked}" under Whitelist in the dashboard.`);
         } else if (err === 'stream_unavailable') {
           showOverlay('Stream unavailable', 'The stream is offline or disabled.');
         } else {
-          showOverlay('Playback error', 'Could not authorize playback.');
+          showOverlay('Playback error', `Could not authorize playback (${err || auth.status}).`);
         }
         return;
       }
