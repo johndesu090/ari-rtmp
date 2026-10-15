@@ -282,7 +282,13 @@ render_template "${APP_DIR}/nginx/rtmp-ip.conf.template"  "${NGINX_PREFIX}/conf/
 # ── Step 9: systemd services ───────────────────────────────────────────────
 log "Installing systemd services"
 cp "${APP_DIR}/systemd/nginx.service"   /etc/systemd/system/nginx.service
-cp "${APP_DIR}/systemd/ari-rtmp.service" /etc/systemd/system/ari-rtmp.service
+# Resolve the actual node binary (it may not be /usr/bin/node if a system
+# Node is already present, e.g. on CI runners or nvm setups).
+NODE_BIN="$(command -v node || true)"
+[[ -n "${NODE_BIN}" ]] || die "Could not locate the node binary."
+info "Using node at ${NODE_BIN}"
+sed "s|__NODE_BIN__|${NODE_BIN}|g" "${APP_DIR}/systemd/ari-rtmp.service" \
+  > /etc/systemd/system/ari-rtmp.service
 systemctl daemon-reload
 systemctl enable nginx.service ari-rtmp.service
 

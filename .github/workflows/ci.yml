@@ -177,7 +177,9 @@ jobs:
 
       - name: Verify RTMP port is listening
         run: |
-          docker compose exec -T nginx sh -c "ss -lnt 2>/dev/null | grep -E ':1935|:80' || netstat -lnt 2>/dev/null | grep -E ':1935|:80'"
+          set -e
+          (ss -lnt | grep -q ':1935' && echo "✓ RTMP 1935 published on host") || { echo "✗ 1935 not published"; ss -lnt; exit 1; }
+          (ss -lnt | grep -q ':80' && echo "✓ HTTP 80 published on host") || { echo "✗ 80 not published"; ss -lnt; exit 1; }
 
       - name: Tear down
         if: always()

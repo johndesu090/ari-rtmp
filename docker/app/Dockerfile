@@ -9,7 +9,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund
+# --ignore-scripts: the postinstall `prisma generate` needs the schema, which
+# is copied on the next line.
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
 COPY prisma ./prisma
 RUN npx prisma generate
