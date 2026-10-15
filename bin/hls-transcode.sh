@@ -19,6 +19,17 @@ HLS_ROOT="__HLS_ROOT__"
 INGEST="__RTMP_INGEST_URL__"
 OUT="${HLS_ROOT}/${NAME}"
 
+# Log ffmpeg/errors somewhere readable. Falls back to stderr (nginx error log).
+LOG_DIR="/var/log/ari-rtmp"
+if mkdir -p "$LOG_DIR" 2>/dev/null && [ -w "$LOG_DIR" ]; then
+  LOG="${LOG_DIR}/${NAME}.log"
+else
+  LOG="/dev/stderr"
+fi
+{
+  echo "==== hls-transcode start $(date -Is) name=${NAME} hls_root=${HLS_ROOT} ingest=${INGEST} ===="
+} >>"$LOG" 2>/dev/null || true
+
 # Clean any stale fragments from a previous session.
 rm -rf "$OUT"
 mkdir -p "$OUT/0" "$OUT/1" "$OUT/2"
@@ -75,4 +86,4 @@ exec ffmpeg -hide_banner -loglevel warning -nostdin \
     -hls_segment_filename "${OUT}/%v/seg_%03d.ts" \
     -master_pl_name index.m3u8 \
     -var_stream_map "v:0,a:0 v:1,a:1 v:2,a:2" \
-    "${OUT}/%v/index.m3u8"
+    "${OUT}/%v/index.m3u8" 2>>"$LOG"

@@ -196,8 +196,8 @@ info "Nginx installed at ${NGINX_PREFIX}"
 
 # ── Step 4: directories ────────────────────────────────────────────────────
 log "Creating data directories"
-mkdir -p "${HLS_ROOT}" "${CERTBOT_WEBROOT}" "${APP_DIR}"
-chown -R www-data:www-data "${HLS_ROOT}" "${CERTBOT_WEBROOT}"
+mkdir -p "${HLS_ROOT}" "${CERTBOT_WEBROOT}" "${APP_DIR}" /var/log/ari-rtmp
+chown -R www-data:www-data "${HLS_ROOT}" "${CERTBOT_WEBROOT}" /var/log/ari-rtmp
 
 # ── Step 5: PostgreSQL ─────────────────────────────────────────────────────
 log "Configuring PostgreSQL"

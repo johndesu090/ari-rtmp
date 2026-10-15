@@ -16,8 +16,8 @@ RTMP_INGEST_URL="${RTMP_INGEST_URL:-rtmp://127.0.0.1:1935/live}"
 SSL_CERT="${SSL_CERT:-/etc/letsencrypt/live/${SERVER_NAME}/fullchain.pem}"
 SSL_KEY="${SSL_KEY:-/etc/letsencrypt/live/${SERVER_NAME}/privkey.pem}"
 
-mkdir -p "${HLS_ROOT}" /var/www/certbot /var/log/nginx /run
-chown -R www-data:www-data "${HLS_ROOT}" /var/www/certbot /var/log/nginx 2>/dev/null || true
+mkdir -p "${HLS_ROOT}" /var/www/certbot /var/log/nginx /var/log/ari-rtmp /run
+chown -R www-data:www-data "${HLS_ROOT}" /var/www/certbot /var/log/nginx /var/log/ari-rtmp 2>/dev/null || true
 
 render() {
   sed \
