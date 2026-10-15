@@ -38,6 +38,11 @@ const config = {
 
   publicBaseUrl: (process.env.PUBLIC_BASE_URL || 'http://localhost').replace(/\/+$/, ''),
 
+  // Host advertised for RTMP/RTMPS ingest. Set this when the public hostname
+  // is behind a CDN/proxy that does not forward ports 1935/1936 (e.g. a
+  // Cloudflare-proxied domain) — use a DNS-only hostname or the origin IP.
+  ingestHost: process.env.INGEST_HOST ? String(process.env.INGEST_HOST).trim() : null,
+
   jwtSecret: required('JWT_SECRET'),
   sessionSecret: required('SESSION_SECRET'),
 

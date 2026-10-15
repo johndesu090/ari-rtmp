@@ -319,6 +319,11 @@
             <dt class="text-slate-500 text-xs mb-1">RTMP ingest</dt>
             <dd class="flex items-center gap-2"><code class="flex-1 min-w-0 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">${escapeHtml(s.rtmpUrl)}</code><button data-copy="${escapeHtml(s.rtmpUrl)}" class="copy shrink-0 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button></dd>
           </div>
+          ${s.rtmpsUrl ? `
+          <div>
+            <dt class="text-slate-500 text-xs mb-1">RTMPS ingest</dt>
+            <dd class="flex items-center gap-2"><code class="flex-1 min-w-0 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">${escapeHtml(s.rtmpsUrl)}</code><button data-copy="${escapeHtml(s.rtmpsUrl)}" class="copy shrink-0 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button></dd>
+          </div>` : ''}
           <div>
             <dt class="text-slate-500 text-xs mb-1">HLS URL</dt>
             <dd class="flex items-center gap-2"><code class="flex-1 min-w-0 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">${escapeHtml(s.hlsUrl)}</code><button data-copy="${escapeHtml(s.hlsUrl)}" class="copy shrink-0 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button></dd>

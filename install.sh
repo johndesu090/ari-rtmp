@@ -118,6 +118,13 @@ echo
 read -rp "Admin dashboard port (internal) [${APP_PORT}]: " PORT_INPUT
 APP_PORT="${PORT_INPUT:-${APP_PORT}}"
 
+# RTMP/RTMPS ingest host. If the public domain is behind a proxy/CDN that does
+# not forward 1935/1936 (e.g. Cloudflare), point ingest at a DNS-only host or
+# the origin IP.
+echo
+read -rp "RTMP/RTMPS ingest host (blank = use the public host; set a DNS-only host or IP if behind Cloudflare): " INGEST_HOST_INPUT
+INGEST_HOST="${INGEST_HOST_INPUT:-}"
+
 echo
 log "Summary"
 info "App directory:     ${APP_DIR}"
@@ -233,6 +240,7 @@ NODE_ENV=production
 PORT=${APP_PORT}
 HOST=127.0.0.1
 PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+INGEST_HOST=${INGEST_HOST}
 JWT_SECRET=${JWT_SECRET}
 SESSION_SECRET=${SESSION_SECRET}
 DATABASE_URL=postgresql://${DB_USER}:${DB_PASS}@127.0.0.1:5432/${DB_NAME}?schema=public

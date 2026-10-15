@@ -142,7 +142,9 @@ test('create a stream returns a key and ingest URLs', async () => {
   const { res, data } = await api('POST', '/api/streams', { auth: true, body: { title: 'Test' } });
   assert.equal(res.status, 201);
   assert.match(data.stream.streamKey, /^[a-f0-9]{32}$/);
-  assert.ok(data.stream.rtmpUrl.includes('1935'));
+  assert.match(data.stream.rtmpUrl, /^rtmp:\/\/.+:1935\/live$/);
+  // RTMPS is only advertised over HTTPS with a hostname; the test env is HTTP.
+  assert.equal(data.stream.rtmpsUrl, null);
   streamKey = data.stream.streamKey;
 });
 

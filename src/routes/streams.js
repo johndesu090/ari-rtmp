@@ -8,16 +8,22 @@ import config from '../config.js';
 const router = express.Router();
 router.use(requireAdmin);
 
-function rtmpServerUrl() {
+// Ingest endpoints. RTMP (:1935) always works; RTMPS (:1936) only when the
+// deployment is HTTPS. The host comes from INGEST_HOST when set, so a
+// CDN-proxied public domain can point ingest at a DNS-only host / origin IP.
+function ingestUrls() {
   const base = config.publicBaseUrl;
-  if (base.startsWith('https')) {
-    // RTMPS is exposed on 1936 when SSL is configured (see nginx templates).
-    return `rtmps://${new URL(base).hostname}:1936/live`;
-  }
-  const host = base.startsWith('http')
+  const publicHost = base.startsWith('http')
     ? new URL(base).hostname
     : base.replace(/^\/+/, '');
-  return `rtmp://${host}:1935/live`;
+  const host = config.ingestHost || publicHost;
+  const secure = base.startsWith('https');
+  const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':');
+  return {
+    rtmpUrl: `rtmp://${host}:1935/live`,
+    // RTMPS needs a hostname that matches the TLS certificate; a bare IP won't.
+    rtmpsUrl: secure && !isIp ? `rtmps://${host}:1936/live` : null,
+  };
 }
 
 // GET /api/streams
@@ -32,7 +38,7 @@ router.get('/', async (_req, res) => {
       streams.map(async (s) => ({
         ...s,
         live: await isLive(s.streamKey),
-        rtmpUrl: rtmpServerUrl(),
+        ...ingestUrls(),
         hlsUrl: `${config.publicBaseUrl}/hls/${s.streamKey}/index.m3u8`,
         embedUrl: `${config.publicBaseUrl}/player.html?key=${s.streamKey}`,
       })),
@@ -55,7 +61,7 @@ router.post('/', async (req, res) => {
     res.status(201).json({
       stream: {
         ...stream,
-        rtmpUrl: rtmpServerUrl(),
+        ...ingestUrls(),
         hlsUrl: `${config.publicBaseUrl}/hls/${stream.streamKey}/index.m3u8`,
         embedUrl: `${config.publicBaseUrl}/player.html?key=${stream.streamKey}`,
       },
