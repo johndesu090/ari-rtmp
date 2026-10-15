@@ -242,8 +242,15 @@ router.post('/refresh', async (req, res) => {
 // POST /api/playback/verify?token=...   (X-Original-URI = /hls/<key>/...)
 // Used by the origin's own nginx (shared-secret protected).
 async function handleVerify(req, res) {
+  // nginx auth_request subrequests do not inherit $args, so the token is
+  // forwarded in the X-Play-Token header (extracted from $request_uri);
+  // the query string is still accepted for direct calls.
   const token = String(
-    req.query.token || req.body?.token || req.cookies?.[playbackCookieName] || '',
+    req.headers['x-play-token'] ||
+      req.query.token ||
+      req.body?.token ||
+      req.cookies?.[playbackCookieName] ||
+      '',
   ).trim();
   if (!token) return res.status(403).send('no token');
 

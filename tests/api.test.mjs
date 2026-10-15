@@ -248,6 +248,18 @@ test('verify gate also answers GET (nginx auth_request inherits the method)', as
   assert.equal(noToken.status, 403);
 });
 
+test('verify gate accepts the token via the X-Play-Token header', async () => {
+  const res = await fetch(`${BASE}/api/playback/verify`, {
+    method: 'GET',
+    headers: {
+      'X-Internal-Token': process.env.INTERNAL_API_TOKEN,
+      'X-Original-URI': `/hls/${streamKey}/0/seg_001.ts`,
+      'X-Play-Token': playToken,
+    },
+  });
+  assert.equal(res.status, 200);
+});
+
 test('viewer log records the watermark ↔ IP relationship', async () => {
   const { res, data } = await api('GET', '/api/viewers', { auth: true });
   assert.equal(res.status, 200);

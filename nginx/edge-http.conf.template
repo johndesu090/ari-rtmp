@@ -10,6 +10,13 @@ map $uri $ari_is_playlist {
     default  0;
 }
 
+# auth_request subrequests inherit $request_uri but NOT $args, so the playback
+# token is extracted from the original URI and forwarded as a header.
+map $request_uri $ari_play_token {
+    default "";
+    ~token=([^&]+) $1;
+}
+
 proxy_cache_path /var/cache/nginx/ari levels=1:2 keys_zone=ari_hls:20m
                  max_size=20g inactive=5m use_temp_path=off;
 
@@ -74,6 +81,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header Host __ORIGIN_HOST__;
         proxy_ssl_server_name on;
+        proxy_set_header X-Play-Token $ari_play_token;
     }
 
     location / {

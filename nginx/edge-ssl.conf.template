@@ -8,6 +8,13 @@ map $uri $ari_is_playlist {
     default  0;
 }
 
+# auth_request subrequests inherit $request_uri but NOT $args, so the playback
+# token is extracted from the original URI and forwarded as a header.
+map $request_uri $ari_play_token {
+    default "";
+    ~token=([^&]+) $1;
+}
+
 # A front proxy (e.g. Cloudflare "Flexible") may terminate TLS and forward to
 # us over plain HTTP while the client used HTTPS. Never redirect in that case.
 map $http_x_forwarded_proto $ari_proto {
@@ -102,6 +109,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header Host __ORIGIN_HOST__;
         proxy_ssl_server_name on;
+        proxy_set_header X-Play-Token $ari_play_token;
     }
 
     location / {

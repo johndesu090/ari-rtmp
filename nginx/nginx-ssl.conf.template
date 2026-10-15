@@ -37,6 +37,14 @@ http {
         ''      close;
     }
 
+    # auth_request subrequests inherit $request_uri but NOT $args, so the
+    # playback token is extracted from the original URI and forwarded as a
+    # header (a bare `proxy_pass ...$is_args$args` would send no token).
+    map $request_uri $ari_play_token {
+        default "";
+        ~token=([^&]+) $1;
+    }
+
     # ── Proxy-aware HTTPS redirect ─────────────────────────────────────
     # A front proxy (e.g. Cloudflare in "Flexible" mode) may terminate TLS
     # and forward to us over plain HTTP while the client actually used HTTPS.
@@ -129,6 +137,7 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header Cookie $http_cookie;
             proxy_set_header X-Internal-Token __INTERNAL_TOKEN__;
+            proxy_set_header X-Play-Token $ari_play_token;
         }
 
         # ── P2P signaling (WebSocket) ──────────────────────────────────
