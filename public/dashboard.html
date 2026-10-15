@@ -58,9 +58,13 @@
 
     <!-- ── Viewer Log ── -->
     <section id="tab-viewers" class="tab-panel hidden">
-      <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <h2 class="text-lg font-semibold">Viewer activity (watermark ↔ IP)</h2>
-        <button id="refreshViewers" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm transition">Refresh</button>
+        <div class="flex gap-2">
+          <input id="viewerSearch" type="search" placeholder="Search watermark or IP…"
+                 class="rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-indigo-500 w-64" />
+          <button id="refreshViewers" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm transition">Refresh</button>
+        </div>
       </div>
       <div class="overflow-x-auto rounded-xl border border-slate-800">
         <table class="w-full text-sm">
@@ -394,14 +398,24 @@
     });
 
     // ── Viewers ──
-    async function loadViewers() {
-      const { viewers } = await api('/api/viewers');
+    let allViewers = [];
+
+    function renderViewers() {
       const body = $('#viewersBody');
-      if (!viewers.length) {
-        body.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No viewer sessions recorded yet.</td></tr>';
+      const q = ($('#viewerSearch').value || '').trim().toLowerCase();
+      const rows = q
+        ? allViewers.filter(v =>
+            (v.watermark || '').toLowerCase().includes(q) ||
+            (v.ipAddress || '').toLowerCase().includes(q) ||
+            ((v.stream && v.stream.title) || '').toLowerCase().includes(q))
+        : allViewers;
+
+      if (!rows.length) {
+        const msg = allViewers.length ? 'No matches for your search.' : 'No viewer sessions recorded yet.';
+        body.innerHTML = `<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">${msg}</td></tr>`;
         return;
       }
-      body.innerHTML = viewers.map(v => `
+      body.innerHTML = rows.map(v => `
         <tr class="hover:bg-slate-900/50">
           <td class="px-4 py-3"><code class="px-2 py-0.5 rounded bg-slate-800 text-xs tracking-widest">${escapeHtml(v.watermark)}</code></td>
           <td class="px-4 py-3 font-mono text-xs">${escapeHtml(v.ipAddress)}</td>
@@ -410,6 +424,13 @@
           <td class="px-4 py-3 text-slate-400 text-xs">${new Date(v.lastSeen).toLocaleString()}</td>
         </tr>`).join('');
     }
+
+    async function loadViewers() {
+      const { viewers } = await api('/api/viewers');
+      allViewers = viewers;
+      renderViewers();
+    }
+    $('#viewerSearch').addEventListener('input', renderViewers);
     $('#refreshViewers').addEventListener('click', loadViewers);
 
     // ── P2P Tracker ──

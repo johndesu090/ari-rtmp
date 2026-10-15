@@ -108,9 +108,10 @@ exec ffmpeg -hide_banner -loglevel warning -nostdin \
     -f hls \
     -hls_time "$SEG_TIME" \
     -hls_list_size "$LIST_SIZE" \
-    -hls_flags delete_segments+independent_segments \
+    -strftime 1 \
+    -hls_flags delete_segments+independent_segments+second_level_segment_index \
     -hls_segment_type mpegts \
-    -hls_segment_filename "${OUT}/%v/seg_%03d.ts" \
+    -hls_segment_filename "${OUT}/%v/seg_%Y%m%d-%H%M%S-%%03d.ts" \
     -master_pl_name index.m3u8 \
     -var_stream_map "v:0,a:0 v:1,a:1 v:2,a:2" \
     "${OUT}/%v/index.m3u8" 2>>"$LOG"

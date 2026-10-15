@@ -269,6 +269,22 @@ test('authorize records the real client IP from CF-Connecting-IP', async () => {
   assert.equal(row.ipAddress, '203.0.113.7');
 });
 
+test('the same IP reuses its watermark; a different IP gets a new one', async () => {
+  const auth = (ip) =>
+    api('POST', '/api/playback/authorize', {
+      body: { streamKey, embedHost: 'localhost' },
+      headers: { 'CF-Connecting-IP': ip },
+    });
+
+  const a1 = await auth('198.51.100.10');
+  const a2 = await auth('198.51.100.10');
+  assert.equal(a1.res.status, 200);
+  assert.equal(a1.data.watermark, a2.data.watermark, 'same IP should reuse its watermark');
+
+  const b = await auth('198.51.100.20');
+  assert.notEqual(b.data.watermark, a1.data.watermark, 'a different IP should get a different watermark');
+});
+
 // ── Domain whitelisting ────────────────────────────────────────────────────
 test('adding a domain then enforcing it on authorize', async () => {
   const add = await api('POST', '/api/whitelist', { auth: true, body: { domain: 'example.com' } });

@@ -45,21 +45,20 @@
       80%  { transform: translate(58vw, 30vh); }
       100% { transform: translate(12vw, 8vh); }
     }
-    /* ── Center play button (click to start; no autoplay) ── */
+    /* ── Center play button (simple big triangle; click to start, no autoplay) ── */
     #playButton {
       position: absolute; top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      width: 84px; height: 84px; border: 0; border-radius: 50%;
-      background: rgba(15, 23, 42, 0.65);
-      color: #fff; cursor: pointer; z-index: 10;
-      display: flex; align-items: center; justify-content: center;
-      backdrop-filter: blur(2px);
-      transition: transform 0.12s ease, background 0.12s ease;
+      padding: 0; border: 0; background: none; line-height: 0;
+      color: rgba(255, 255, 255, 0.85);
+      cursor: pointer; z-index: 10;
+      filter: drop-shadow(0 3px 14px rgba(0, 0, 0, 0.7));
+      transition: transform 0.12s ease, color 0.12s ease;
       -webkit-tap-highlight-color: transparent;
     }
-    #playButton:hover { background: rgba(79, 70, 229, 0.85); transform: translate(-50%, -50%) scale(1.06); }
+    #playButton:hover { transform: translate(-50%, -50%) scale(1.08); color: #fff; }
     #playButton.hidden { display: none; }
-    #playButton svg { width: 40px; height: 40px; margin-left: 5px; }
+    #playButton svg { width: 110px; height: 110px; display: block; }
 
     /* ── Overlay (loading / errors / domain block) ── */
     #overlay {

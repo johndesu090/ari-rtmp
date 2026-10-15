@@ -110,17 +110,28 @@ router.post('/authorize', async (req, res) => {
     }
 
     const ip = clientIp(req);
-    const watermark = await uniqueWatermark();
+    const userAgent = String(req.headers['user-agent'] || '').slice(0, 512);
 
-    const session = await prisma.viewerSession.create({
-      data: {
-        watermark,
-        ipAddress: ip,
-        userAgent: String(req.headers['user-agent'] || '').slice(0, 512),
-        streamId: stream.id,
-      },
+    // One stable watermark per viewer IP: reuse the existing session (and its
+    // watermark) if this IP already has one; otherwise create a new session.
+    let session = await prisma.viewerSession.findFirst({
+      where: { ipAddress: ip },
+      orderBy: { lastSeen: 'desc' },
     });
 
+    if (session) {
+      session = await prisma.viewerSession.update({
+        where: { id: session.id },
+        data: { streamId: stream.id, userAgent, lastSeen: new Date() },
+      });
+    } else {
+      const newWatermark = await uniqueWatermark();
+      session = await prisma.viewerSession.create({
+        data: { watermark: newWatermark, ipAddress: ip, userAgent, streamId: stream.id },
+      });
+    }
+
+    const watermark = session.watermark;
     const token = issuePlaybackToken({
       sessionId: session.id,
       streamKey,
