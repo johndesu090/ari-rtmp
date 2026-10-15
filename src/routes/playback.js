@@ -253,10 +253,14 @@ async function handleVerify(req, res) {
   return res.status(200).send('ok');
 }
 
+// nginx `auth_request` subrequests inherit the original request method, so
+// the gate must answer GET as well as POST.
+router.get('/verify', requireInternal, handleVerify);
 router.post('/verify', requireInternal, handleVerify);
 
 // Public gate used by edge/sub-servers (protected by the playback token
 // itself; the edge forwards the viewer's token to the origin).
+router.get('/verify-edge', handleVerify);
 router.post('/verify-edge', handleVerify);
 
 // Lightweight session info (used for debugging / dashboard embedding).

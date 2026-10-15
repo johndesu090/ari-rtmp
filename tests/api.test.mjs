@@ -231,6 +231,23 @@ test('verify gate rejects an invalid token', async () => {
   assert.equal(res.status, 403);
 });
 
+test('verify gate also answers GET (nginx auth_request inherits the method)', async () => {
+  const ok = await fetch(`${BASE}/api/playback/verify?token=${encodeURIComponent(playToken)}`, {
+    method: 'GET',
+    headers: {
+      'X-Internal-Token': process.env.INTERNAL_API_TOKEN,
+      'X-Original-URI': `/hls/${streamKey}/0/seg_001.ts`,
+    },
+  });
+  assert.equal(ok.status, 200);
+
+  const noToken = await fetch(`${BASE}/api/playback/verify`, {
+    method: 'GET',
+    headers: { 'X-Internal-Token': process.env.INTERNAL_API_TOKEN },
+  });
+  assert.equal(noToken.status, 403);
+});
+
 test('viewer log records the watermark ↔ IP relationship', async () => {
   const { res, data } = await api('GET', '/api/viewers', { auth: true });
   assert.equal(res.status, 200);
