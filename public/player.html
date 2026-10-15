@@ -125,6 +125,7 @@
     let watermarkText = '';
     let destroyed = false;
     let p2p = null;
+    let segmentOrigins = []; // [{ url, weight }] — origin + healthy edges
 
     const video = document.getElementById('video');
     const overlay = document.getElementById('overlay');
@@ -220,6 +221,7 @@
       }
       currentToken = data.token;
       if (data.watermark && data.watermark !== watermarkText) applyWatermark(data.watermark);
+      if (Array.isArray(data.segmentOrigins)) segmentOrigins = data.segmentOrigins;
       if (p2p) p2p.updateToken(currentToken);
       scheduleRefresh(data.refreshIn || 45);
     }
@@ -252,6 +254,68 @@
       };
     }
 
+    // ── Multi-origin load balancing (origin + edge/sub-servers) ────────
+    // Builds a weighted, shuffled list of absolute segment URLs to try.
+    function segmentCandidates(pathname) {
+      const bases = segmentOrigins.length ? segmentOrigins : [{ url: window.location.origin, weight: 1 }];
+      const weighted = [];
+      for (const o of bases) {
+        const w = Math.max(1, Math.min(100, o.weight || 1));
+        for (let i = 0; i < w; i += 1) weighted.push(o.url);
+      }
+      for (let i = weighted.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [weighted[i], weighted[j]] = [weighted[j], weighted[i]];
+      }
+      const seen = new Set();
+      const out = [];
+      for (const base of weighted) {
+        if (seen.has(base)) continue;
+        seen.add(base);
+        try {
+          const u = new URL(pathname, base);
+          if (currentToken) u.searchParams.set('token', currentToken);
+          out.push(u.toString());
+        } catch { /* skip bad base */ }
+      }
+      return out;
+    }
+
+    // Fetch a segment from the origin/edges (token in the query string, so no
+    // cookies are needed and cross-origin edge fetches work with CORS).
+    async function fetchFromServer(url) {
+      const res = await fetch(url, { credentials: 'omit', mode: 'cors', cache: 'no-store' });
+      if (!res.ok) throw new Error('http ' + res.status);
+      return res.arrayBuffer();
+    }
+
+    // Segment load order: local cache → P2P swarm → load-balanced edges.
+    async function loadSegment(segKey, originUrl) {
+      let pathname = null;
+      try { pathname = new URL(originUrl, window.location.href).pathname; } catch { /* ignore */ }
+
+      if (segKey && p2p) {
+        const cached = p2p.cached(segKey);
+        if (cached) return cached;
+
+        const fromSwarm = await p2p.getFromSwarm(segKey);
+        if (fromSwarm) return fromSwarm;
+      }
+
+      if (!pathname) throw new Error('bad segment url');
+      let lastErr = null;
+      for (const url of segmentCandidates(pathname)) {
+        try {
+          const buf = await fetchFromServer(url);
+          if (segKey && p2p) p2p.store(segKey, buf, 'server');
+          return buf;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      throw lastErr || new Error('segment unavailable');
+    }
+
     function startPlayback(hlsUrl) {
       const isNative = video.canPlayType('application/vnd.apple.mpegurl');
 
@@ -264,30 +328,29 @@
           load(context, config, callbacks) {
             const urlWithToken = tokenized(context.url);
 
-            // Media segments: try the P2P swarm first, fall back to server.
-            if (p2p && context.type === 'fragment') {
+            // Media segments: P2P first, then load-balanced origin/edges.
+            // Only intercept when there is actually something to gain.
+            const useP2POrEdges = (p2p && p2p.enabled) || segmentOrigins.length > 1;
+            if (context.type === 'fragment' && useP2POrEdges) {
               let segKey = null;
               try {
                 segKey = new URL(urlWithToken, window.location.href).pathname;
               } catch { /* ignore */ }
 
-              if (segKey) {
-                p2p
-                  .fetchSegment(segKey, urlWithToken)
-                  .then((buf) => {
-                    callbacks.onSuccess(
-                      { url: urlWithToken, data: buf },
-                      buildStats(buf.byteLength),
-                      context,
-                      null,
-                    );
-                  })
-                  .catch(() => {
-                    context.url = urlWithToken;
-                    super.load(context, config, callbacks);
-                  });
-                return;
-              }
+              loadSegment(segKey, urlWithToken)
+                .then((buf) => {
+                  callbacks.onSuccess(
+                    { url: urlWithToken, data: buf },
+                    buildStats(buf.byteLength),
+                    context,
+                    null,
+                  );
+                })
+                .catch(() => {
+                  context.url = urlWithToken;
+                  super.load(context, config, callbacks);
+                });
+              return;
             }
 
             context.url = urlWithToken;
@@ -382,6 +445,7 @@
 
       currentToken = auth.data.token;
       applyWatermark(auth.data.watermark || '');
+      if (Array.isArray(auth.data.segmentOrigins)) segmentOrigins = auth.data.segmentOrigins;
       scheduleRefresh(auth.data.refreshIn || 45);
       await initP2P();
       startPlayback(auth.data.hlsUrl);

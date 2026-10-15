@@ -17,6 +17,7 @@ import viewerRoutes from './routes/viewers.js';
 import rtmpRoutes from './routes/rtmp.js';
 import playbackRoutes from './routes/playback.js';
 import p2pRoutes from './routes/p2p.js';
+import edgeRoutes from './routes/edges.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '..', 'public');
@@ -40,6 +41,7 @@ app.use('/api/viewers', viewerRoutes);
 app.use('/api/rtmp', rtmpRoutes);
 app.use('/api/playback', playbackRoutes);
 app.use('/api/p2p', p2pRoutes);
+app.use('/api/edges', edgeRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({

@@ -65,3 +65,28 @@ model P2PSnapshot {
   @@index([streamKey])
   @@index([createdAt])
 }
+
+// Edge / sub-servers: pull-based relays that cache HLS segments and take
+// load off the origin. The player load-balances segments across healthy edges.
+model EdgeServer {
+  id         String    @id @default(cuid())
+  name       String
+  baseUrl    String    @unique
+  region     String?
+  weight     Int       @default(1)
+  isActive   Boolean   @default(true)
+  secretHash String?
+  version    String?
+  loadPct    Int?
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([isActive])
+}
+
+// Simple key/value store (edge registration token, etc.).
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

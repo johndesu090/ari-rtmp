@@ -1,0 +1,8 @@
+[Unit]
+Description=Ari RTMP edge heartbeat
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ari-edge/edge-heartbeat.sh

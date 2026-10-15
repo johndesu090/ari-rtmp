@@ -10,6 +10,7 @@ import {
   playbackCookieOptions,
 } from '../lib/tokens.js';
 import { clientIp, normalizeHost, hostMatchesWhitelist } from '../lib/util.js';
+import { getEdgePool } from '../lib/edges.js';
 import {
   cachePlaybackSession,
   getPlaybackSession,
@@ -21,6 +22,17 @@ const router = express.Router();
 
 // Refresh the token when 75% of its lifetime has elapsed.
 const refreshInSeconds = Math.max(5, Math.floor(config.tokenTtlSeconds * 0.75));
+
+// Origin first (always available, low weight), then healthy edges.
+async function buildSegmentOrigins() {
+  const origin = { url: config.publicBaseUrl, weight: 1, region: null };
+  try {
+    const edges = await getEdgePool();
+    return [origin, ...edges];
+  } catch {
+    return [origin];
+  }
+}
 
 function resolveEmbedHost(req) {
   // The player computes the embedding host (document.referrer /
@@ -130,6 +142,7 @@ router.post('/authorize', async (req, res) => {
       hlsUrl: hlsUrlFor(streamKey),
       expiresIn: config.tokenTtlSeconds,
       refreshIn: refreshInSeconds,
+      segmentOrigins: await buildSegmentOrigins(),
     });
   } catch (err) {
     console.error('[playback] authorize failed:', err);
@@ -191,6 +204,7 @@ router.post('/refresh', async (req, res) => {
       watermark: session.watermark,
       expiresIn: config.tokenTtlSeconds,
       refreshIn: refreshInSeconds,
+      segmentOrigins: await buildSegmentOrigins(),
     });
   } catch (err) {
     console.error('[playback] refresh failed:', err);
@@ -200,7 +214,8 @@ router.post('/refresh', async (req, res) => {
 
 // ── nginx auth_request gate for /hls/ ──────────────────────────────────
 // POST /api/playback/verify?token=...   (X-Original-URI = /hls/<key>/...)
-router.post('/verify', requireInternal, async (req, res) => {
+// Used by the origin's own nginx (shared-secret protected).
+async function handleVerify(req, res) {
   const token = String(
     req.query.token || req.body?.token || req.cookies?.[playbackCookieName] || '',
   ).trim();
@@ -222,7 +237,7 @@ router.post('/verify', requireInternal, async (req, res) => {
     }
   }
 
-  // Optional: ensure the stream is still active.
+  // Ensure the stream is still active.
   try {
     const stream = await prisma.stream.findUnique({
       where: { streamKey: payload.sk },
@@ -236,7 +251,13 @@ router.post('/verify', requireInternal, async (req, res) => {
   }
 
   return res.status(200).send('ok');
-});
+}
+
+router.post('/verify', requireInternal, handleVerify);
+
+// Public gate used by edge/sub-servers (protected by the playback token
+// itself; the edge forwards the viewer's token to the origin).
+router.post('/verify-edge', handleVerify);
 
 // Lightweight session info (used for debugging / dashboard embedding).
 router.get('/session/:id', requireInternal, async (req, res) => {

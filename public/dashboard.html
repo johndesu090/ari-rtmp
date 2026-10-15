@@ -26,6 +26,7 @@
       <button data-tab="whitelist" class="tab-btn px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400">Whitelist</button>
       <button data-tab="viewers"   class="tab-btn px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400">Viewer Log</button>
       <button data-tab="p2p"       class="tab-btn px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400">P2P Tracker</button>
+      <button data-tab="edges"     class="tab-btn px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400">Edge Servers</button>
     </nav>
 
     <!-- ── Streams ── -->
@@ -144,9 +145,68 @@
         </table>
       </div>
     </section>
+
+    <!-- ── Edge Servers ── -->
+    <section id="tab-edges" class="tab-panel hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Edge / sub-servers</h2>
+        <button id="refreshEdges" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm transition">Refresh</button>
+      </div>
+      <p class="text-sm text-slate-400 mb-5">
+        Edge servers cache HLS segments and take load off the origin. The player
+        load-balances segment downloads across every healthy edge. Install an edge with
+        <code class="px-1 rounded bg-slate-800">sudo bash install-edge.sh</code>.
+      </p>
+
+      <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800 mb-6">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-sm font-semibold text-slate-300">Edge registration token</h3>
+          <div class="flex gap-2">
+            <button id="revealToken" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Reveal</button>
+            <button id="rotateToken" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs transition">Generate / rotate</button>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <code id="regToken" class="flex-1 truncate rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-xs">—</code>
+          <button id="copyToken" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Copy</button>
+        </div>
+        <p class="text-xs text-slate-500 mt-2">Paste this into the edge installer. Rotating invalidates it for new registrations.</p>
+      </div>
+
+      <div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <h3 class="text-sm font-semibold text-slate-300">Servers</h3>
+        <div class="flex gap-2 flex-wrap">
+          <input id="edgeName" placeholder="name" class="rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+          <input id="edgeUrl" placeholder="https://edge1.example.com" class="rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+          <input id="edgeRegion" placeholder="region" class="w-28 rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+          <input id="edgeWeight" type="number" min="1" max="100" value="1" class="w-20 rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+          <button id="addEdge" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition">Add</button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto rounded-xl border border-slate-800">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-900 text-slate-400">
+            <tr>
+              <th class="text-left px-4 py-3 font-medium">Name</th>
+              <th class="text-left px-4 py-3 font-medium">Base URL</th>
+              <th class="text-left px-4 py-3 font-medium">Region</th>
+              <th class="text-left px-4 py-3 font-medium">Weight</th>
+              <th class="text-left px-4 py-3 font-medium">Status</th>
+              <th class="text-left px-4 py-3 font-medium">Last seen</th>
+              <th class="text-left px-4 py-3 font-medium">Load</th>
+              <th class="text-right px-4 py-3 font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="edgesBody" class="divide-y divide-slate-800"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
   <div id="toast" class="fixed bottom-6 right-6 hidden px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-sm shadow-lg"></div>
+
+  <script>
     const $ = (sel, root = document) => root.querySelector(sel);
 
     let toastTimer;
@@ -186,6 +246,7 @@
         if (btn.dataset.tab === 'viewers') loadViewers();
         if (btn.dataset.tab === 'whitelist') loadWhitelist();
         if (btn.dataset.tab === 'p2p') loadP2P();
+        if (btn.dataset.tab === 'edges') loadEdges();
       });
     });
 
@@ -426,6 +487,119 @@
 
     $('#refreshP2P').addEventListener('click', loadP2P);
 
+    // ── Edge / sub-servers ──
+    let regTokenValue = null;
+    let revealRegToken = false;
+
+    function statusPill(status) {
+      const map = {
+        healthy: 'bg-emerald-900 text-emerald-300',
+        unreachable: 'bg-amber-900 text-amber-300',
+        disabled: 'bg-slate-700 text-slate-300',
+      };
+      return `<span class="px-2 py-0.5 rounded-full text-xs ${map[status] || 'bg-slate-700 text-slate-300'}">${status}</span>`;
+    }
+
+    function renderRegToken() {
+      const el = $('#regToken');
+      if (!regTokenValue) { el.textContent = 'No token generated yet'; return; }
+      el.textContent = revealRegToken ? regTokenValue : regTokenValue.slice(0, 6) + '•'.repeat(18);
+    }
+
+    async function loadRegToken() {
+      try {
+        const { token } = await api('/api/edges/registration-token');
+        regTokenValue = token;
+        renderRegToken();
+      } catch { /* ignore */ }
+    }
+
+    async function loadEdges() {
+      await loadRegToken();
+      try {
+        const { edges } = await api('/api/edges');
+        const body = $('#edgesBody');
+        if (!edges.length) {
+          body.innerHTML = '<tr><td colspan="8" class="px-4 py-8 text-center text-slate-500">No edge servers yet.</td></tr>';
+          return;
+        }
+        body.innerHTML = edges.map(e => `
+          <tr class="hover:bg-slate-900/50">
+            <td class="px-4 py-3">${escapeHtml(e.name)}</td>
+            <td class="px-4 py-3"><code class="text-xs">${escapeHtml(e.baseUrl)}</code></td>
+            <td class="px-4 py-3 text-slate-400">${escapeHtml(e.region || '—')}</td>
+            <td class="px-4 py-3">${e.weight}</td>
+            <td class="px-4 py-3">${statusPill(e.status)}</td>
+            <td class="px-4 py-3 text-slate-400 text-xs">${e.lastSeenAt ? new Date(e.lastSeenAt).toLocaleString() : 'never'}</td>
+            <td class="px-4 py-3 text-slate-400">${e.loadPct != null ? e.loadPct + '%' : '—'}</td>
+            <td class="px-4 py-3 text-right whitespace-nowrap">
+              <button data-edge-toggle="${e.id}" data-active="${e.isActive}" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">${e.isActive ? 'Disable' : 'Enable'}</button>
+              <button data-edge-del="${e.id}" class="px-3 py-1.5 rounded-lg bg-red-950 hover:bg-red-900 border border-red-900 text-xs transition ml-2">Delete</button>
+            </td>
+          </tr>`).join('');
+      } catch (err) {
+        toast(err.message, false);
+      }
+    }
+
+    $('#revealToken').addEventListener('click', () => {
+      revealRegToken = !revealRegToken;
+      renderRegToken();
+    });
+
+    $('#copyToken').addEventListener('click', async () => {
+      if (!regTokenValue) { toast('Generate a token first', false); return; }
+      await navigator.clipboard.writeText(regTokenValue);
+      toast('Token copied');
+    });
+
+    $('#rotateToken').addEventListener('click', async () => {
+      if (!confirm('Rotate the registration token? Existing edges keep working; new registrations need the new token.')) return;
+      try {
+        const { token } = await api('/api/edges/registration-token', { method: 'POST' });
+        regTokenValue = token;
+        revealRegToken = true;
+        renderRegToken();
+        toast('Token rotated');
+      } catch (e) { toast(e.message, false); }
+    });
+
+    $('#addEdge').addEventListener('click', async () => {
+      const name = $('#edgeName').value.trim();
+      const baseUrl = $('#edgeUrl').value.trim();
+      const region = $('#edgeRegion').value.trim();
+      const weight = parseInt($('#edgeWeight').value || '1', 10);
+      if (!baseUrl) { toast('Base URL required', false); return; }
+      try {
+        await api('/api/edges', { method: 'POST', body: JSON.stringify({ name, baseUrl, region, weight }) });
+        $('#edgeName').value = ''; $('#edgeUrl').value = ''; $('#edgeRegion').value = ''; $('#edgeWeight').value = '1';
+        toast('Edge added');
+        loadEdges();
+      } catch (e) { toast(e.message === 'edge_exists' ? 'Edge already exists' : e.message, false); }
+    });
+
+    $('#edgesBody').addEventListener('click', async (ev) => {
+      const toggle = ev.target.closest('[data-edge-toggle]');
+      const del = ev.target.closest('[data-edge-del]');
+      try {
+        if (toggle) {
+          await api(`/api/edges/${toggle.dataset.edgeToggle}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ isActive: toggle.dataset.active !== 'true' }),
+          });
+          toast('Updated');
+          loadEdges();
+        } else if (del) {
+          if (!confirm('Remove this edge server?')) return;
+          await api(`/api/edges/${del.dataset.edgeDel}`, { method: 'DELETE' });
+          toast('Removed');
+          loadEdges();
+        }
+      } catch (e) { toast(e.message, false); }
+    });
+
+    $('#refreshEdges').addEventListener('click', loadEdges);
+
     // ── Boot ──
     loadMe();
     loadStreams();
@@ -437,6 +611,10 @@
     setInterval(() => {
       if (!$('#tab-p2p').classList.contains('hidden')) loadP2P().catch(() => {});
     }, 8000);
+    // Edge status refresh
+    setInterval(() => {
+      if (!$('#tab-edges').classList.contains('hidden')) loadEdges().catch(() => {});
+    }, 10000);
   </script>
 </body>
 </html>

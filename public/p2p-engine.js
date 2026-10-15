@@ -381,39 +381,55 @@
     }
 
     // ── Segment acquisition (the core API) ─────────────────────────────
+    // Convenience wrapper used when no multi-origin balancing is configured.
     async fetchSegment(segKey, fallbackUrl) {
-      // 1) local cache
-      const cached = this.cache.get(segKey);
-      if (cached) {
-        this._touchCache(segKey, cached);
-        return cached;
-      }
+      const cached = this.cached(segKey);
+      if (cached) return cached;
 
-      // 2) try the swarm
-      if (this.enabled) {
-        try {
-          const buf = await this._fetchFromSwarm(segKey);
-          if (buf) {
-            this._putCache(segKey, buf);
-            this._announceHave(segKey);
-            this.p2pBytes += buf.byteLength;
-            this._pendP2P += buf.byteLength;
-            return buf;
-          }
-        } catch {
-          /* fall through to server */
-        }
-      }
+      const fromSwarm = await this.getFromSwarm(segKey);
+      if (fromSwarm) return fromSwarm;
 
-      // 3) fall back to the origin server
       const res = await fetch(fallbackUrl, { credentials: 'same-origin' });
       if (!res.ok) throw new Error('http ' + res.status);
       const buf = await res.arrayBuffer();
+      this.store(segKey, buf, 'server');
+      return buf;
+    }
+
+    /** Return a cached segment without touching the network, or null. */
+    cached(segKey) {
+      const buf = this.cache.get(segKey);
+      if (!buf) return null;
+      this._touchCache(segKey, buf);
+      return buf;
+    }
+
+    /** Ask the swarm for a segment. Returns an ArrayBuffer or null. */
+    async getFromSwarm(segKey) {
+      if (!this.enabled) return null;
+      try {
+        const buf = await this._fetchFromSwarm(segKey);
+        if (buf) {
+          this.store(segKey, buf, 'p2p');
+          return buf;
+        }
+      } catch {
+        /* miss */
+      }
+      return null;
+    }
+
+    /** Cache a segment obtained from any source and announce it to the swarm. */
+    store(segKey, buf, source) {
       this._putCache(segKey, buf);
       this._announceHave(segKey);
-      this.serverBytes += buf.byteLength;
-      this._pendServer += buf.byteLength;
-      return buf;
+      if (source === 'p2p') {
+        this.p2pBytes += buf.byteLength;
+        this._pendP2P += buf.byteLength;
+      } else {
+        this.serverBytes += buf.byteLength;
+        this._pendServer += buf.byteLength;
+      }
     }
 
     async _fetchFromSwarm(segKey) {

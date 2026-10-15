@@ -117,36 +117,91 @@ buffering disabled (see the Nginx templates).
 
 ---
 
+## Edge / sub-servers (multi-origin delivery)
+
+Scale horizontally with **edge relays**. Each edge caches HLS media segments
+and serves them to nearby viewers, and the player **load-balances segment
+downloads** across every healthy edge — a classic CDN tier on top of P2P.
+
+```
+                         ┌──────────── edge1 (cache) ────────────┐
+ viewer ── P2P swarm ──▶ │                                       │
+        └── LB segments ─┤  nginx: /hls/ → proxy_cache + auth    ├─▶ origin /hls/
+                         └──────────── edge2 (cache) ────────────┘
+```
+
+**How it works**
+
+- An edge is a lightweight Nginx that reverse-proxies `/hls/` from the origin
+  with `proxy_cache` (media segments cached; live playlists always proxied).
+- **Every edge request is authorized**: the edge runs `auth_request` against the
+  origin's `/api/playback/verify-edge`, so the short-lived playback token is
+  validated before any byte is served — including cache hits.
+- The origin tracks edges in the `EdgeServer` table with health (heartbeat),
+  region, and weight. Edges self-register using a **registration token** from
+  the dashboard and then send 30-second heartbeats.
+- `/api/playback/authorize` returns a `segmentOrigins` list (origin + healthy
+  edges). The player's hls.js loader picks a weighted-random origin per segment
+  and **fails over** to the next on error; playlists still come from the origin.
+
+### Adding an edge
+
+1. Dashboard → **Edge Servers** → **Generate / rotate** the registration token.
+2. On the new server, clone the repo and run:
+
+   ```bash
+   sudo bash install-edge.sh
+   ```
+
+   It asks for the origin URL, this edge's public URL, name/region, the
+   registration token, and whether to enable SSL (Certbot) for the edge domain.
+3. The edge appears in the dashboard within ~30s as **healthy** and starts
+   receiving traffic. You can also add edges manually (host + weight).
+
+> **Note:** native HLS (Safari/iOS) keeps using the origin for playlists and
+> segments (cookie-based auth); multi-origin balancing applies to the hls.js
+> path used by Chrome, Firefox, Edge, and Android.
+
+---
+
 ## Repository layout
 
 ```
 ari-rtmp/
-├── install.sh                 # interactive one-click installer
+├── install.sh                 # interactive one-click installer (origin)
+├── install-edge.sh            # edge / sub-server installer
 ├── package.json
 ├── .env.example
-├── prisma/schema.prisma       # Admin, Stream, WhitelistedDomain, ViewerSession, P2PSnapshot
+├── prisma/schema.prisma       # Admin, Stream, WhitelistedDomain, ViewerSession, P2PSnapshot, EdgeServer, Setting
 ├── src/
 │   ├── server.js              # Express app + P2P tracker attachment
 │   ├── config.js
-│   ├── lib/                   # prisma, redis, tokens, watermark helpers
+│   ├── lib/                   # prisma, redis, tokens, watermark, edges, settings
 │   ├── p2p/tracker.js         # P2P signaling tracker + swarm telemetry
 │   ├── middleware/auth.js     # admin JWT cookie auth
-│   └── routes/                # setup, auth, streams, whitelist, viewers, rtmp, playback, p2p
+│   └── routes/                # setup, auth, streams, whitelist, viewers, rtmp, playback, p2p, edges
 ├── public/
 │   ├── index.html             # landing → setup wizard / login redirect
 │   ├── setup.html             # first-run admin creation
 │   ├── login.html
-│   ├── dashboard.html         # streams, whitelist, viewer/watermark log, P2P tracker
+│   ├── dashboard.html         # streams, whitelist, viewer log, P2P tracker, edge servers
 │   ├── p2p-engine.js          # browser WebRTC swarm engine (window.AriP2P)
-│   └── player.html            # embeddable HLS player + watermark + refresh + P2P
+│   └── player.html            # HLS player + watermark + refresh + P2P + multi-origin LB
 ├── nginx/
-│   ├── nginx.conf.template        # base (http, IP fallback)
-│   ├── nginx-ssl.conf.template    # https/wss/rtmps
-│   └── rtmp.conf                  # rtmp block + ABR exec
+│   ├── nginx.conf.template        # origin (http, IP fallback)
+│   ├── nginx-ssl.conf.template    # origin (https/wss/rtmps)
+│   ├── rtmp.conf                  # origin rtmp block + ABR exec
+│   ├── edge-http.conf.template    # edge relay (http)
+│   └── edge-ssl.conf.template     # edge relay (https)
 ├── bin/hls-transcode.sh       # ffmpeg ABR → low-latency HLS
+├── scripts/
+│   ├── certbot-renew.sh       # origin cert renewal
+│   └── edge-heartbeat.sh      # edge → origin health reporting
 ├── systemd/
 │   ├── ari-rtmp.service
-│   └── nginx.service
+│   ├── nginx.service
+│   ├── ari-edge-heartbeat.service
+│   └── ari-edge-heartbeat.timer
 └── scripts/certbot-renew.sh
 ```
 
@@ -261,6 +316,16 @@ All runtime configuration lives in `.env` (see `.env.example`):
 |---|---|---|
 | `GET` | `/api/p2p/config` | Whether P2P is enabled + ICE servers |
 | `WS`  | `/p2p` | Signaling tracker (join with a playback token) |
+
+**Edges**
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `GET/POST/PATCH/DELETE` | `/api/edges` | admin | Manage edge servers |
+| `GET/POST` | `/api/edges/registration-token` | admin | View / rotate registration token |
+| `POST` | `/api/edges/register` | token | Edge self-registration |
+| `POST` | `/api/edges/heartbeat` | edge secret | Edge health/load reporting |
+| `POST` | `/api/playback/verify-edge` | playback token | Token gate used by edges |
 
 ---
 

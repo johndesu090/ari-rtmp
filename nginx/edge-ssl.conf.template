@@ -1,0 +1,92 @@
+# ── Ari RTMP — Edge / sub-server (HTTPS) ───────────────────────────────
+# Rendered by install-edge.sh into /etc/nginx/sites-available/ari-edge.
+# Placeholders: __EDGE_SERVER_NAME__ __ORIGIN_URL__ __ORIGIN_HOST__
+#               __SSL_CERT__ __SSL_KEY__
+
+map $uri $ari_is_playlist {
+    ~\.m3u8$ 1;
+    default  0;
+}
+
+proxy_cache_path /var/cache/nginx/ari levels=1:2 keys_zone=ari_hls:20m
+                 max_size=20g inactive=5m use_temp_path=off;
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __EDGE_SERVER_NAME__;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name __EDGE_SERVER_NAME__;
+    server_tokens off;
+
+    ssl_certificate     __SSL_CERT__;
+    ssl_certificate_key __SSL_KEY__;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    location = /edge/health {
+        default_type text/plain;
+        return 200 "ok";
+    }
+
+    location /hls/ {
+        auth_request /_edge_auth;
+
+        proxy_pass __ORIGIN_URL__/hls/;
+        proxy_http_version 1.1;
+        proxy_set_header Host __ORIGIN_HOST__;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_ssl_server_name on;
+
+        proxy_cache ari_hls;
+        proxy_cache_key "$host$uri";
+        proxy_cache_valid 200 10s;
+        proxy_cache_valid 404 1s;
+        proxy_cache_lock on;
+        proxy_cache_use_stale updating error timeout http_500 http_502 http_503 http_504;
+        proxy_no_cache $ari_is_playlist;
+        proxy_cache_bypass $ari_is_playlist;
+        add_header X-Cache-Status $upstream_cache_status always;
+
+        add_header Access-Control-Allow-Origin "*" always;
+        add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Range, Origin, Accept" always;
+        add_header Access-Control-Expose-Headers "Content-Length, Content-Range" always;
+        add_header Cache-Control "no-cache" always;
+
+        if ($request_method = OPTIONS) {
+            add_header Access-Control-Allow-Origin "*";
+            add_header Access-Control-Allow-Methods "GET, OPTIONS";
+            add_header Access-Control-Allow-Headers "Range, Origin, Accept";
+            return 204;
+        }
+    }
+
+    location = /_edge_auth {
+        internal;
+        proxy_pass __ORIGIN_URL__/api/playback/verify-edge$is_args$args;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header X-Original-URI $request_uri;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Host __ORIGIN_HOST__;
+        proxy_ssl_server_name on;
+    }
+
+    location / {
+        return 404;
+    }
+}
