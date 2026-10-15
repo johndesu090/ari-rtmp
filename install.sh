@@ -259,7 +259,7 @@ log "Rendering Nginx configuration"
 render_template() {
   local tpl="$1" out="$2"
   sed \
-    -e "s|__APP_PORT__|${APP_PORT}|g" \
+    -e "s|__APP_UPSTREAM__|127.0.0.1:${APP_PORT}|g" \
     -e "s|__HLS_ROOT__|${HLS_ROOT}|g" \
     -e "s|__SERVER_NAME__|${SERVER_NAME}|g" \
     -e "s|__INTERNAL_TOKEN__|${INTERNAL_TOKEN}|g" \

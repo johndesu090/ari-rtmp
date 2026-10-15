@@ -1,0 +1,49 @@
+# ── Ari RTMP — edge / sub-server stack ─────────────────────────────────
+# One caching relay. Deploy on as many servers as you like, then the origin
+# player load-balances segment downloads across all healthy edges.
+#
+# Bring up with:  docker compose -f docker-compose.edge.yml up -d --build
+#            or:  ./docker/deploy-edge.sh
+
+name: ari-rtmp-edge
+
+services:
+  edge:
+    build:
+      context: .
+      dockerfile: docker/edge/Dockerfile
+    environment:
+      ORIGIN_URL: ${ORIGIN_URL:?set ORIGIN_URL in .env.edge}
+      EDGE_URL: ${EDGE_URL:?set EDGE_URL in .env.edge}
+      EDGE_NAME: ${EDGE_NAME:-edge}
+      EDGE_REGION: ${EDGE_REGION:-}
+      EDGE_REGISTRATION_TOKEN: ${EDGE_REGISTRATION_TOKEN:-}
+      # Set EDGE_SERVER_NAME to enable SSL when certs are present.
+      EDGE_SERVER_NAME: ${EDGE_SERVER_NAME:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - edge_config:/etc/ari-edge
+      - edge_cache:/var/cache/nginx/ari
+      - edge_letsencrypt:/etc/letsencrypt
+      - edge_webroot:/var/www/certbot
+    restart: unless-stopped
+
+  # SSL helper (opt-in). Example:
+  #   docker compose -f docker-compose.edge.yml run --rm certbot certonly \
+  #     --webroot -w /var/www/certbot -d edge1.example.com \
+  #     --email you@example.com --agree-tos --non-interactive
+  #   docker compose -f docker-compose.edge.yml restart edge
+  certbot:
+    image: certbot/certbot:latest
+    profiles: ["ssl"]
+    volumes:
+      - edge_letsencrypt:/etc/letsencrypt
+      - edge_webroot:/var/www/certbot
+
+volumes:
+  edge_config:
+  edge_cache:
+  edge_letsencrypt:
+  edge_webroot:

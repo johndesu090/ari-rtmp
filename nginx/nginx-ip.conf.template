@@ -1,6 +1,6 @@
 # ── Ari RTMP — Nginx (HTTP / IP mode) ──────────────────────────────────
 # Rendered by install.sh into /usr/local/nginx/conf/nginx.conf
-# Placeholders: __APP_PORT__ __HLS_ROOT__ __SERVER_NAME__ __INTERNAL_TOKEN__
+# Placeholders: __APP_UPSTREAM__ __HLS_ROOT__ __SERVER_NAME__ __INTERNAL_TOKEN__
 
 user  www-data;
 worker_processes  auto;
@@ -77,7 +77,7 @@ http {
         # Internal auth subrequest → backend token verification.
         location = /_hls_auth {
             internal;
-            proxy_pass http://127.0.0.1:__APP_PORT__/api/playback/verify$is_args$args;
+            proxy_pass http://__APP_UPSTREAM__/api/playback/verify$is_args$args;
             proxy_pass_request_body off;
             proxy_set_header Content-Length "";
             proxy_set_header X-Original-URI $request_uri;
@@ -88,7 +88,7 @@ http {
 
         # ── P2P signaling (WebSocket) ──────────────────────────────────
         location /p2p {
-            proxy_pass http://127.0.0.1:__APP_PORT__;
+            proxy_pass http://__APP_UPSTREAM__;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection $connection_upgrade;
@@ -103,7 +103,7 @@ http {
 
         # ── API + frontend (proxied to Node) ───────────────────────────
         location / {
-            proxy_pass http://127.0.0.1:__APP_PORT__;
+            proxy_pass http://__APP_UPSTREAM__;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;

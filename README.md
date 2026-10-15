@@ -42,6 +42,75 @@ first administrator account. Then log in to the dashboard.
 
 ---
 
+## Docker deployment (fast path)
+
+Prefer containers? Everything ships with Docker too — no compiling, no system
+packages. Requirements: Docker with the Compose v2 plugin.
+
+### Origin
+
+```bash
+git clone https://github.com/johndesu090/ari-rtmp.git ari-rtmp && cd ari-rtmp
+./docker/deploy.sh
+```
+
+`deploy.sh` prompts for the public URL (and optional domain + SSL), writes a
+`.env` with freshly generated secrets, then builds and starts the full stack:
+
+| Service | Purpose | Ports |
+|---|---|---|
+| `db` | PostgreSQL 16 | internal |
+| `redis` | Redis 7 | internal |
+| `app` | Node API + dashboard + P2P tracker | internal `:3000` |
+| `nginx` | RTMP/RTMPS ingest, ABR→HLS, edge proxy, TLS | `80`, `443`, `1935`, `1936` |
+
+Non-interactive alternative:
+
+```bash
+cp .env.docker.example .env     # fill in PUBLIC_BASE_URL + secrets
+docker compose up -d --build
+```
+
+### Edge / sub-server
+
+```bash
+./docker/deploy-edge.sh
+```
+
+Prompts for the origin URL, this edge's public URL, and the dashboard
+registration token; the container self-registers and starts heartbeating.
+Deploy as many edges as you like.
+
+### SSL with Docker
+
+The stack includes a `certbot` service (profile `ssl`):
+
+```bash
+# Origin
+docker compose run --rm certbot certonly --webroot -w /var/www/certbot \
+  -d stream.example.com --email you@example.com --agree-tos --non-interactive
+docker compose restart nginx
+
+# Renew (add to host cron)
+docker compose run --rm certbot renew && docker compose restart nginx
+```
+
+Nginx auto-detects certificates for its `SERVER_NAME` and switches to
+HTTPS/WSS/RTMPS on restart.
+
+### Useful commands
+
+```bash
+docker compose ps
+docker compose logs -f app nginx
+docker compose up -d --build     # rebuild after a code change
+docker compose down              # stop (volumes are kept)
+```
+
+Data lives in named volumes: `db_data`, `redis_data`, `hls`, `letsencrypt`.
+
+---
+
 ## How it works
 
 ```
@@ -172,6 +241,9 @@ downloads** across every healthy edge — a classic CDN tier on top of P2P.
 ari-rtmp/
 ├── install.sh                 # interactive one-click installer (origin)
 ├── install-edge.sh            # edge / sub-server installer
+├── docker-compose.yml         # origin stack (db, redis, app, nginx, certbot)
+├── docker-compose.edge.yml    # edge relay stack
+├── docker/                    # Dockerfiles, entrypoints, deploy.sh, deploy-edge.sh
 ├── package.json
 ├── .env.example
 ├── prisma/schema.prisma       # Admin, Stream, WhitelistedDomain, ViewerSession, P2PSnapshot, EdgeServer, Setting

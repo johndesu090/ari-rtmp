@@ -1,6 +1,6 @@
 # ── Ari RTMP — RTMP ingest (IP / HTTP mode) ────────────────────────────
 # Rendered by install.sh into /usr/local/nginx/conf/rtmp.conf
-# Placeholders: __APP_PORT__ __HLS_ROOT__ __TRANSCODE_SCRIPT__ __INTERNAL_TOKEN__
+# Placeholders: __APP_UPSTREAM__ __HLS_ROOT__ __TRANSCODE_SCRIPT__
 
 rtmp {
     server {
@@ -21,8 +21,8 @@ rtmp {
             allow play all;
 
             # Strict stream-key enforcement.
-            on_publish      http://127.0.0.1:__APP_PORT__/api/rtmp/on_publish;
-            on_publish_done http://127.0.0.1:__APP_PORT__/api/rtmp/on_publish_done;
+            on_publish      http://__APP_UPSTREAM__/api/rtmp/on_publish;
+            on_publish_done http://__APP_UPSTREAM__/api/rtmp/on_publish_done;
 
             # Spawn the ABR transcoder for each publishing client.
             # nginx-rtmp substitutes $name with the stream key.

@@ -1,0 +1,100 @@
+# ── Ari RTMP — origin stack ────────────────────────────────────────────
+# Postgres + Redis + Node app (API/dashboard/P2P) + Nginx (RTMP/HLS/edge proxy).
+# Bring up with:  docker compose up -d --build   (or ./docker/deploy.sh)
+
+name: ari-rtmp
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-ari_rtmp}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_DB: ${DB_NAME:-ari_rtmp}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ari_rtmp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?set INTERNAL_API_TOKEN in .env}
+      DATABASE_URL: postgresql://${DB_USER:-ari_rtmp}:${DB_PASSWORD}@db:5432/${DB_NAME:-ari_rtmp}?schema=public
+      REDIS_URL: redis://redis:6379
+      HLS_ROOT: /var/www/hls
+      TOKEN_TTL_SECONDS: ${TOKEN_TTL_SECONDS:-60}
+      ADMIN_SESSION_HOURS: ${ADMIN_SESSION_HOURS:-24}
+      P2P_ENABLED: ${P2P_ENABLED:-true}
+      P2P_MAX_PEERS: ${P2P_MAX_PEERS:-5}
+      P2P_MAX_SWARM_PEERS: ${P2P_MAX_SWARM_PEERS:-200}
+      P2P_SNAPSHOT_SECONDS: ${P2P_SNAPSHOT_SECONDS:-30}
+      P2P_ICE_SERVERS: ${P2P_ICE_SERVERS:-stun:stun.l.google.com:19302}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    environment:
+      APP_UPSTREAM: app:3000
+      SERVER_NAME: ${SERVER_NAME:-_}
+      INTERNAL_TOKEN: ${INTERNAL_API_TOKEN:?set INTERNAL_API_TOKEN in .env}
+      HLS_ROOT: /var/www/hls
+      RTMP_INGEST_URL: rtmp://127.0.0.1:1935/live
+    ports:
+      - "80:80"
+      - "443:443"
+      - "1935:1935"
+      - "1936:1936"
+    volumes:
+      - hls:/var/www/hls
+      - letsencrypt:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  # SSL helper (opt-in profile). Example:
+  #   docker compose run --rm certbot certonly --webroot -w /var/www/certbot \
+  #     -d stream.example.com --email you@example.com --agree-tos --non-interactive
+  #   docker compose restart nginx
+  certbot:
+    image: certbot/certbot:latest
+    profiles: ["ssl"]
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+
+volumes:
+  db_data:
+  redis_data:
+  hls:
+  letsencrypt:
+  certbot_www:
