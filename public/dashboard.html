@@ -27,6 +27,7 @@
       <button data-tab="viewers"   class="tab-btn whitespace-nowrap shrink-0 px-3 sm:px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400">Viewer Log</button>
       <button data-tab="p2p"       class="tab-btn whitespace-nowrap shrink-0 px-3 sm:px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400">P2P Tracker</button>
       <button data-tab="edges"     class="tab-btn whitespace-nowrap shrink-0 px-3 sm:px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400">Edge Servers</button>
+      <button data-tab="settings"  class="tab-btn whitespace-nowrap shrink-0 px-3 sm:px-4 py-2 -mb-px border-b-2 border-transparent text-slate-400">Settings</button>
     </nav>
 
     <!-- ── Streams ── -->
@@ -206,6 +207,39 @@
         </table>
       </div>
     </section>
+
+    <!-- ── Settings ── -->
+    <section id="tab-settings" class="tab-panel hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">HLS settings</h2>
+        <button id="refreshSettings" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm transition">Refresh</button>
+      </div>
+      <p class="text-sm text-slate-400 mb-5">
+        Segment length and playlist window for the ABR transcoder. Shorter segments lower
+        latency; a longer window rides out more packet loss. New values apply from the next
+        stream start unless you choose to restart live streams.
+      </p>
+
+      <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800 max-w-xl">
+        <label class="block mb-4">
+          <span class="block text-sm font-medium mb-1">Segment time (seconds)</span>
+          <input id="hlsTime" type="number" min="1" max="10" step="1"
+                 class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+          <span class="block text-xs text-slate-500 mt-1">1–10. Lower means lower latency. Default 1.</span>
+        </label>
+        <label class="block mb-4">
+          <span class="block text-sm font-medium mb-1">Playlist size (segments)</span>
+          <input id="hlsListSize" type="number" min="2" max="30" step="1"
+                 class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+          <span class="block text-xs text-slate-500 mt-1">2–30. Segments kept in the live window. Default 4.</span>
+        </label>
+        <label class="flex items-center gap-2 mb-5 text-sm">
+          <input id="hlsApply" type="checkbox" checked class="accent-indigo-500" />
+          <span>Restart live streams now so the change takes effect immediately</span>
+        </label>
+        <button id="saveSettings" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition">Save</button>
+      </div>
+    </section>
   </div>
 
   <!-- ── Admin-only stream preview ── -->
@@ -265,7 +299,39 @@
         if (btn.dataset.tab === 'whitelist') loadWhitelist();
         if (btn.dataset.tab === 'p2p') loadP2P();
         if (btn.dataset.tab === 'edges') loadEdges();
+        if (btn.dataset.tab === 'settings') loadSettings();
       });
+    });
+
+    // ── Settings ──
+    async function loadSettings() {
+      try {
+        const { hls } = await api('/api/settings');
+        $('#hlsTime').value = hls.hlsTime;
+        $('#hlsListSize').value = hls.hlsListSize;
+      } catch (err) {
+        toast(err.message || 'Failed to load settings', false);
+      }
+    }
+    $('#refreshSettings').addEventListener('click', loadSettings);
+    $('#saveSettings').addEventListener('click', async () => {
+      try {
+        const { hls, restarted } = await api('/api/settings', {
+          method: 'PUT',
+          body: JSON.stringify({
+            hlsTime: Number($('#hlsTime').value),
+            hlsListSize: Number($('#hlsListSize').value),
+            apply: $('#hlsApply').checked,
+          }),
+        });
+        $('#hlsTime').value = hls.hlsTime;
+        $('#hlsListSize').value = hls.hlsListSize;
+        toast(restarted && restarted.length
+          ? `Saved — restarted ${restarted.length} live stream(s)`
+          : 'Saved — applies from the next stream start');
+      } catch (err) {
+        toast(err.message || 'Failed to save settings', false);
+      }
     });
 
     // ── Auth ──

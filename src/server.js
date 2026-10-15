@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import config from './config.js';
 import prisma from './lib/prisma.js';
 import { redis } from './lib/redis.js';
+import { getHlsSettings, writeHlsSettingsFile } from './lib/settings.js';
 import { attachP2P } from './p2p/tracker.js';
 
 import setupRoutes from './routes/setup.js';
@@ -18,6 +19,7 @@ import rtmpRoutes from './routes/rtmp.js';
 import playbackRoutes from './routes/playback.js';
 import p2pRoutes from './routes/p2p.js';
 import edgeRoutes from './routes/edges.js';
+import settingsRoutes from './routes/settings.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '..', 'public');
@@ -42,6 +44,7 @@ app.use('/api/rtmp', rtmpRoutes);
 app.use('/api/playback', playbackRoutes);
 app.use('/api/p2p', p2pRoutes);
 app.use('/api/edges', edgeRoutes);
+app.use('/api/settings', settingsRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -97,6 +100,12 @@ server.listen(config.port, config.host, () => {
     console.log('[ari-rtmp] P2P segment sharing enabled');
   }
 });
+
+// Mirror the persisted HLS settings into the file the transcoder reads, so a
+// fresh install (or a cleared HLS root) still uses the configured values.
+getHlsSettings()
+  .then(writeHlsSettingsFile)
+  .catch((err) => console.warn('[ari-rtmp] could not write HLS settings file:', err.message));
 
 async function shutdown(signal) {
   console.log(`[ari-rtmp] ${signal} received, shutting down...`);

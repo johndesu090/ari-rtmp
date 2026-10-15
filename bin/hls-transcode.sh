@@ -2,7 +2,9 @@
 # ── Ari RTMP — ABR → low-latency HLS transcoder ────────────────────────
 # Invoked by nginx-rtmp `exec` with the stream key as $1. It reads the
 # incoming RTMP stream and produces a 3-rung adaptive bitrate ladder as
-# low-latency HLS (2s segments, 5-segment window).
+# low-latency HLS. Segment duration and playlist window are configurable from
+# the dashboard (Settings tab) through ${HLS_ROOT}/.hls-settings, and default
+# to 1s segments with a 4-segment window.
 #
 # The ladder never upscales: the top rung is capped at the source height and
 # the lower rungs scale down from it, so a 480p ingest is not re-encoded at
@@ -56,24 +58,45 @@ KEYINFO="/tmp/ari-keyinfo-${NAME}"
 head -c 16 /dev/urandom > "$KEY_FILE"
 printf '%s\n%s\n' "/hls/${NAME}/enc.key" "$KEY_FILE" > "$KEYINFO"
 
-SEG_TIME=2
-LIST_SIZE=5
-GOP=48            # ~2s at 24fps source; adjust if your source differs
+# Segment duration and playlist window come from the dashboard settings file
+# (written by the API under the HLS root). Fall back to the defaults when the
+# file is missing or a value is not a plain integer.
+read_hls_setting() {
+  local key="$1" def="$2" file="${HLS_ROOT}/.hls-settings" val=""
+  if [[ -f "$file" ]]; then
+    val="$(grep -E "^${key}=" "$file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -dc '0-9')"
+  fi
+  if [[ -n "$val" ]]; then echo "$val"; else echo "$def"; fi
+}
+SEG_TIME="$(read_hls_setting HLS_TIME 1)"
+LIST_SIZE="$(read_hls_setting HLS_LIST_SIZE 4)"
+FPS=24            # assumed source frame rate; overwritten by the probe below
 
 # ── Probe the source (audio presence + video height) ───────────────────
 SRC_H=720
 HAS_AUDIO=1
 if command -v ffprobe >/dev/null 2>&1; then
-  H="$(timeout 12 ffprobe -v error -select_streams v:0 \
-        -show_entries stream=height -of csv=p=0 "${INGEST}/${NAME}" 2>/dev/null | head -n1 || true)"
+  PROBE="$(timeout 12 ffprobe -v error -select_streams v:0 \
+        -show_entries stream=height,r_frame_rate -of csv=p=0 "${INGEST}/${NAME}" 2>/dev/null | head -n1 || true)"
+  H="${PROBE%%,*}"
+  FR="${PROBE##*,}"
   if [[ "$H" =~ ^[0-9]+$ ]] && (( H > 0 )); then
     SRC_H="$H"
+  fi
+  if [[ "$FR" =~ ^([0-9]+)/([0-9]+)$ ]] && (( BASH_REMATCH[2] > 0 )); then
+    FPS=$(( BASH_REMATCH[1] / BASH_REMATCH[2] ))
   fi
   if AUDIO_PROBE="$(timeout 12 ffprobe -v error -select_streams a \
         -show_entries stream=codec_type -of csv=p=0 "${INGEST}/${NAME}" 2>/dev/null)"; then
     printf '%s' "$AUDIO_PROBE" | grep -q audio || HAS_AUDIO=0
   fi
 fi
+
+# Keyframe interval tracks the segment duration so every segment begins on a
+# keyframe (required by independent_segments).
+(( FPS > 0 )) || FPS=24
+GOP=$(( SEG_TIME * FPS ))
+(( GOP > 0 )) || GOP=48
 
 even() { local v="$1"; (( v % 2 == 0 )) && echo "$v" || echo $(( v - 1 )); }
 
