@@ -4,7 +4,7 @@
   "description": "Self-hosted low-latency HLS live-streaming platform with ABR, strict stream-key enforcement, short-lived playback tokens with auto-refresh, domain whitelisting, and dynamic IP-linked watermarks.",
   "private": true,
   "type": "module",
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "engines": {
     "node": ">=20"
   },

@@ -406,4 +406,16 @@ All runtime configuration lives in `.env` (see `.env.example`):
 
 ## License
 
-MIT.
+**Ari RTMP** is licensed under the **PolyForm Noncommercial License 1.0.0**
+(SPDX: `PolyForm-Noncommercial-1.0.0`). See [LICENSE](LICENSE) for the full terms.
+
+You may use, modify, and share this software for **any noncommercial purpose**
+— personal, hobby, research, educational, charitable, public-safety/health, and
+government use are all permitted. **Commercial use is not permitted.**
+
+For commercial licensing, contact the copyright holder
+([@johndesu090](https://github.com/johndesu090)).
+
+```
+Required Notice: Copyright (c) 2026 johndesu090 (https://github.com/johndesu090)
+```
