@@ -34,6 +34,16 @@ fi
   echo "==== hls-transcode start $(date -Is) name=${NAME} hls_root=${HLS_ROOT} ingest=${INGEST} ===="
 } >>"$LOG" 2>/dev/null || true
 
+# Kill any other transcoder for this stream first. nginx-rtmp normally kills
+# the child on unpublish, but a config reload orphans it — leaving two ffmpeg
+# processes writing the same HLS dir, where delete_segments removes segments
+# the other process still references.
+for p in $(pgrep -f "live/${NAME}" 2>/dev/null || true); do
+  [[ "$p" == "$$" ]] && continue
+  kill -TERM "$p" 2>/dev/null || true
+done
+sleep 1
+
 # Clean any stale fragments from a previous session.
 rm -rf "$OUT"
 mkdir -p "$OUT/0" "$OUT/1" "$OUT/2"
