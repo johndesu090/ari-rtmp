@@ -126,6 +126,7 @@
     let destroyed = false;
     let p2p = null;
     let segmentOrigins = []; // [{ url, weight }] — origin + healthy edges
+    let sourceUrl = null; // the hls.js manifest URL (without token)
 
     const video = document.getElementById('video');
     const overlay = document.getElementById('overlay');
@@ -374,14 +375,19 @@
 
         hls.on(window.Hls.Events.ERROR, (_evt, data) => {
           if (!data || !data.fatal) return;
-          // A 403 usually means the token expired mid-request.
+          // A 403 means the token expired/was rejected. Refresh it and reload
+          // the manifest with the new token (startLoad alone won't re-request
+          // the manifest, so a 403 on the master playlist would never recover).
           if (data.response && data.response.code === 403) {
-            refreshToken();
-            hls.startLoad();
+            refreshToken().finally(() => {
+              if (hls) hls.loadSource(tokenized(sourceUrl || hlsUrl));
+            });
             return;
           }
           switch (data.type) {
             case window.Hls.ErrorTypes.NETWORK_ERROR:
+              // Retry, but also refresh the token in case it lapsed.
+              refreshToken();
               hls.startLoad();
               break;
             case window.Hls.ErrorTypes.MEDIA_ERROR:
@@ -393,6 +399,7 @@
           }
         });
 
+        sourceUrl = hlsUrl;
         hls.loadSource(tokenized(hlsUrl));
         hls.attachMedia(video);
       } else if (isNative) {
