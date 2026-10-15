@@ -103,9 +103,9 @@ exec ffmpeg -hide_banner -loglevel warning -nostdin \
     "${INPUT_ARGS[@]}" \
     -filter_complex "\
 [0:v]split=3[v0][v1][v2]; \
-[v0]scale=-2:${R0}[v0out]; \
-[v1]scale=-2:${R1}[v1out]; \
-[v2]scale=-2:${R2}[v2out]" \
+[v0]scale=-2:${R0},format=yuv420p[v0out]; \
+[v1]scale=-2:${R1},format=yuv420p[v1out]; \
+[v2]scale=-2:${R2},format=yuv420p[v2out]" \
     -map "[v0out]" -map "[v1out]" -map "[v2out]" \
     "${AUDIO_MAP[@]}" \
     -c:v:0 libx264 -preset veryfast -profile:v:0 high     -b:v:0 "${B0}k" -maxrate:v:0 "${MAX0}k" -bufsize:v:0 "${BUF0}k" \
