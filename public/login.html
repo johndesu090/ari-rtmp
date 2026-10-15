@@ -36,7 +36,7 @@
       </form>
     </div>
 
-    <p class="text-center text-sm text-slate-500 mt-6">
+    <p id="wizardHint" class="text-center text-sm text-slate-500 mt-6 hidden">
       Need to set up? <a href="/setup.html" class="text-indigo-400 hover:underline">Run the wizard</a>
     </p>
   </div>
@@ -52,7 +52,11 @@
         if (res.ok) window.location.replace('/dashboard.html');
         else {
           const s = await fetch('/api/setup/status').then(r => r.json());
-          if (!s.configured) window.location.replace('/setup.html');
+          if (!s.configured) {
+            // Only offer the setup wizard before the first admin exists.
+            document.getElementById('wizardHint').classList.remove('hidden');
+            window.location.replace('/setup.html');
+          }
         }
       } catch { /* ignore */ }
     })();
