@@ -442,6 +442,13 @@
 
     // ── Boot ───────────────────────────────────────────────────────────
     async function boot() {
+      // Embed-only: refuse direct / top-level access so the player is only
+      // usable from an approved site's iframe.
+      if (window.self === window.top) {
+        showOverlay('Embed only', 'This player can only be used when embedded on an approved site.');
+        return;
+      }
+
       if (!STREAM_KEY) {
         showOverlay('No stream specified', 'Add ?key=YOUR_STREAM_KEY to the URL.');
         return;
