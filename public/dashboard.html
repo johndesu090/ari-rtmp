@@ -208,6 +208,20 @@
     </section>
   </div>
 
+  <!-- ── Admin-only stream preview ── -->
+  <div id="previewModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4">
+    <div class="w-full max-w-3xl">
+      <div class="flex items-center justify-between mb-2">
+        <h3 id="previewTitle" class="font-semibold text-slate-100">Preview</h3>
+        <button id="previewClose" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm transition">Close</button>
+      </div>
+      <div class="aspect-video bg-black rounded-xl overflow-hidden border border-slate-800">
+        <iframe id="previewFrame" class="w-full h-full" allow="autoplay; encrypted-media" frameborder="0" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">Admin-only preview — not visible to the public.</p>
+    </div>
+  </div>
+
   <div id="toast" class="fixed bottom-6 right-6 hidden px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-sm shadow-lg"></div>
 
   <script>
@@ -286,6 +300,7 @@
             <div class="text-xs text-slate-500">created ${new Date(s.createdAt).toLocaleString()} · ${s._count?.viewers ?? 0} sessions</div>
           </div>
           <div class="flex flex-wrap gap-2 justify-end">
+            <button data-act="preview" data-key="${escapeHtml(s.streamKey)}" data-title="${escapeHtml(s.title)}" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs transition">Preview</button>
             <button data-act="toggle" data-id="${s.id}" data-active="${s.isActive}" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">${s.isActive ? 'Disable' : 'Enable'}</button>
             <button data-act="rotate" data-id="${s.id}" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs transition">Rotate key</button>
             <button data-act="delete" data-id="${s.id}" class="px-3 py-1.5 rounded-lg bg-red-950 hover:bg-red-900 border border-red-900 text-xs transition">Delete</button>
@@ -346,6 +361,12 @@
       const btn = e.target.closest('button[data-act]');
       if (!btn) return;
       const { act, id } = btn.dataset;
+
+      if (act === 'preview') {
+        openPreview(btn.dataset.key, btn.dataset.title);
+        return;
+      }
+
       try {
         if (act === 'toggle') {
           await api(`/api/streams/${id}`, { method: 'PATCH', body: JSON.stringify({ isActive: btn.dataset.active !== 'true' }) });
@@ -360,6 +381,26 @@
         loadStreams();
       } catch (err) { toast(err.message, false); }
     });
+
+    // ── Admin-only stream preview ──
+    // Rendered in an iframe (so the player's embed-only guard passes) and only
+    // reachable from the authenticated dashboard.
+    const previewModal = $('#previewModal');
+    const previewFrame = $('#previewFrame');
+    function openPreview(key, title) {
+      $('#previewTitle').textContent = `Preview — ${title}`;
+      previewFrame.src = `/player.html?key=${encodeURIComponent(key)}`;
+      previewModal.classList.remove('hidden');
+      previewModal.classList.add('flex');
+    }
+    function closePreview() {
+      previewFrame.src = 'about:blank';
+      previewModal.classList.add('hidden');
+      previewModal.classList.remove('flex');
+    }
+    $('#previewClose').addEventListener('click', closePreview);
+    previewModal.addEventListener('click', (e) => { if (e.target === previewModal) closePreview(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePreview(); });
 
     // ── Whitelist ──
     async function loadWhitelist() {
