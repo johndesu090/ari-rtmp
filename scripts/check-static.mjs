@@ -68,6 +68,21 @@ for (const file of readdirSync(nginxDir).filter((f) => f.endsWith('.template')))
   else ok(`${file}: placeholders OK (${[...found].length})`);
 }
 
+// 4) The compiled Nginx build must enable every module the templates use.
+//    auth_request (ngx_http_auth_request_module) is NOT built by default and
+//    gates HLS playback, so its absence breaks token enforcement.
+const REQUIRED_CONFIGURE_FLAGS = [
+  '--with-http_auth_request_module',
+  '--with-http_ssl_module',
+  '--with-http_v2_module',
+];
+for (const rel of ['install.sh', 'docker/nginx/Dockerfile']) {
+  const text = readFileSync(join(root, rel), 'utf8');
+  const missing = REQUIRED_CONFIGURE_FLAGS.filter((f) => !text.includes(f));
+  if (missing.length) fail(`${rel}: Nginx build missing ${missing.join(', ')}`);
+  else ok(`${rel}: Nginx configure flags include required modules`);
+}
+
 if (failures > 0) {
   console.error(`\nStatic checks failed: ${failures} problem(s).`);
   process.exit(1);
